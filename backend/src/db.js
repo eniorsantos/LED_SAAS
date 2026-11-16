@@ -70,9 +70,12 @@ CREATE TABLE IF NOT EXISTS auditoria (
 
 function seed() {
   const n = db.prepare('SELECT COUNT(*) v FROM cidades').get().v;
-  db.prepare("INSERT OR IGNORE INTO config (id) VALUES (1)").run();
+  db.prepare('INSERT OR IGNORE INTO config (id) VALUES (1)').run();
   if (n > 0) return;
-  const ins = (sql, rows) => { const s = db.prepare(sql); for (const r of rows) s.run(...r); };
+  const ins = (sql, rows) => {
+    const s = db.prepare(sql);
+    for (const r of rows) s.run(...r);
+  };
   ins('INSERT OR IGNORE INTO cidades (id,nome,uf) VALUES (?,?,?)', [
     ['aracaju', 'Aracaju', 'SE'],
     ['salvador', 'Salvador', 'BA'],
@@ -84,35 +87,50 @@ function seed() {
     ['AJU 04', 'Francisco Porto', 'aracaju'],
   ]);
   ins('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)', [
-    ['Atakarejo'], ['Vita'], ['Diniz Fonseca'], ['Jardins Delicatessen'],
-    ['Boticário'], ['Hospital dos Olhos'], ['Rede Primavera'], ['São Braz'],
+    ['Atakarejo'],
+    ['Vita'],
+    ['Diniz Fonseca'],
+    ['Jardins Delicatessen'],
+    ['Boticário'],
+    ['Hospital dos Olhos'],
+    ['Rede Primavera'],
+    ['São Braz'],
   ]);
-  ins('INSERT OR IGNORE INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)', [
-    ['c1', 'aracaju', 'AJU 01', 'Atakarejo', '2026-02-10', '2027-04-09', 0],
-    ['c2', 'aracaju', 'AJU 01', 'Boticário', '2026-11-14', '2026-11-28', 1],
-    ['c3', 'aracaju', 'AJU 02', 'Vita', '2026-08-01', '2026-12-20', 0],
-    ['c4', 'aracaju', 'AJU 02', 'Diniz Fonseca', '2026-06-15', '2026-09-30', 0],
-    ['c5', 'aracaju', 'AJU 03', 'Jardins Delicatessen', '2026-09-01', '2027-01-31', 0],
-    ['c6', 'aracaju', 'AJU 03', 'Hospital dos Olhos', '2026-10-20', '2026-10-31', 0],
-    ['c7', 'aracaju', 'AJU 04', 'São Braz', '2026-07-10', '2026-12-10', 0],
-    ['c8', 'aracaju', 'AJU 04', 'Rede Primavera', '2026-10-27', '2026-11-14', 1],
-  ]);
-  ins("INSERT OR IGNORE INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia) VALUES (?,?,?,?,?,?,?)", [
-    ['s1', 'c1', 'AJU 01', '07:00', 15, 'SEG', 1],
-    ['s2', 'c3', 'AJU 01', '07:15', 15, 'SEG', 1],
-    ['s3', 'c4', 'AJU 01', '07:30', 10, 'SEG', 1],
-  ]);
+  ins(
+    'INSERT OR IGNORE INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
+    [
+      ['c1', 'aracaju', 'AJU 01', 'Atakarejo', '2026-02-10', '2027-04-09', 0],
+      ['c2', 'aracaju', 'AJU 01', 'Boticário', '2026-11-14', '2026-11-28', 1],
+      ['c3', 'aracaju', 'AJU 02', 'Vita', '2026-08-01', '2026-12-20', 0],
+      ['c4', 'aracaju', 'AJU 02', 'Diniz Fonseca', '2026-06-15', '2026-09-30', 0],
+      ['c5', 'aracaju', 'AJU 03', 'Jardins Delicatessen', '2026-09-01', '2027-01-31', 0],
+      ['c6', 'aracaju', 'AJU 03', 'Hospital dos Olhos', '2026-10-20', '2026-10-31', 0],
+      ['c7', 'aracaju', 'AJU 04', 'São Braz', '2026-07-10', '2026-12-10', 0],
+      ['c8', 'aracaju', 'AJU 04', 'Rede Primavera', '2026-10-27', '2026-11-14', 1],
+    ],
+  );
+  ins(
+    'INSERT OR IGNORE INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia) VALUES (?,?,?,?,?,?,?)',
+    [
+      ['s1', 'c1', 'AJU 01', '07:00', 15, 'SEG', 1],
+      ['s2', 'c3', 'AJU 01', '07:15', 15, 'SEG', 1],
+      ['s3', 'c4', 'AJU 01', '07:30', 10, 'SEG', 1],
+    ],
+  );
   ins('INSERT OR IGNORE INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)', [
     ['admin', bcrypt.hashSync('admin123', 10), 'admin', 'Administrador'],
     ['regional', bcrypt.hashSync('reg123', 10), 'regional', 'Gestor Regional'],
     ['operador', bcrypt.hashSync('op123', 10), 'operador', 'Operador'],
     ['viewer', bcrypt.hashSync('view123', 10), 'visualizador', 'Visualizador'],
   ]);
-  ins('INSERT OR IGNORE INTO usuario_cidade (login,cidade_id) VALUES (?,?)', [['regional', 'aracaju']]);
-  // Exemplo de múltiplas reservas: Jardins (c5) tem 1 reserva futura além do período atual
-  ins('INSERT OR IGNORE INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)', [
-    ['r1', 'c5', '2027-02-01', '2027-02-28', 'Jardins Delicatessen', 'admin'],
+  ins('INSERT OR IGNORE INTO usuario_cidade (login,cidade_id) VALUES (?,?)', [
+    ['regional', 'aracaju'],
   ]);
+  // Exemplo de múltiplas reservas: Jardins (c5) tem 1 reserva futura além do período atual
+  ins(
+    'INSERT OR IGNORE INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
+    [['r1', 'c5', '2027-02-01', '2027-02-28', 'Jardins Delicatessen', 'admin']],
+  );
 }
 
 // Seed opt-in: na implantação o banco nasce VAZIO (não populado).
@@ -126,7 +144,9 @@ if (process.env.SEED === 'true' || process.env.SEED === '1') {
   seed();
 }
 if (db.prepare('SELECT COUNT(*) v FROM usuarios').get().v === 0) {
-  db.prepare("INSERT INTO usuarios (login,senha,perfil,nome) VALUES ('admin',?, 'admin','Administrador')").run(bcrypt.hashSync('admin123', 10));
+  db.prepare(
+    "INSERT INTO usuarios (login,senha,perfil,nome) VALUES ('admin',?, 'admin','Administrador')",
+  ).run(bcrypt.hashSync('admin123', 10));
   console.log('admin de resgate criado (admin/admin123 — troque a senha)');
 }
 
@@ -134,25 +154,53 @@ if (db.prepare('SELECT COUNT(*) v FROM usuarios').get().v === 0) {
 // (só com seed ligado; sem SEED o banco permanece como está)
 if (process.env.SEED === 'true' || process.env.SEED === '1') {
   try {
-    db.prepare("INSERT OR IGNORE INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES ('r1','c5','2027-02-01','2027-02-28','Jardins Delicatessen','admin')").run();
-  } catch {}
+    db.prepare(
+      "INSERT OR IGNORE INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES ('r1','c5','2027-02-01','2027-02-28','Jardins Delicatessen','admin')",
+    ).run();
+  } catch {
+    // ignore: reserva de exemplo já pode existir
+  }
 }
 
 // Migração: bancos criados antes desta feature não têm as colunas de autorização.
 try {
-  const cols = db.prepare('PRAGMA table_info(programacoes)').all().map((c) => c.name);
-  if (!cols.includes('autorizado_por')) db.exec('ALTER TABLE programacoes ADD COLUMN autorizado_por TEXT');
-  if (!cols.includes('motivo_autorizacao')) db.exec('ALTER TABLE programacoes ADD COLUMN motivo_autorizacao TEXT');
-  const resCols = db.prepare('PRAGMA table_info(reservas)').all().map((c) => c.name);
-  if (!resCols.includes('anunciante')) db.exec("ALTER TABLE reservas ADD COLUMN anunciante TEXT NOT NULL DEFAULT ''");
-  const ledCols = db.prepare('PRAGMA table_info(leds)').all().map((c) => c.name);
-  if (!ledCols.includes('espacos_total')) db.exec('ALTER TABLE leds ADD COLUMN espacos_total INTEGER');
-  const cfgCols = db.prepare('PRAGMA table_info(config)').all().map((c) => c.name);
-  if (!cfgCols.includes('max_clientes_por_led')) db.exec('ALTER TABLE config ADD COLUMN max_clientes_por_led INTEGER NOT NULL DEFAULT 8');
-  if (!cfgCols.includes('logo_dataurl')) db.exec("ALTER TABLE config ADD COLUMN logo_dataurl TEXT NOT NULL DEFAULT ''");
-  const notCols = db.prepare('PRAGMA table_info(notificacoes)').all().map((c) => c.name);
-  if (!notCols.includes('cidade_id')) db.exec("ALTER TABLE notificacoes ADD COLUMN cidade_id TEXT NOT NULL DEFAULT ''");
-} catch {}
+  const cols = db
+    .prepare('PRAGMA table_info(programacoes)')
+    .all()
+    .map((c) => c.name);
+  if (!cols.includes('autorizado_por'))
+    db.exec('ALTER TABLE programacoes ADD COLUMN autorizado_por TEXT');
+  if (!cols.includes('motivo_autorizacao'))
+    db.exec('ALTER TABLE programacoes ADD COLUMN motivo_autorizacao TEXT');
+  const resCols = db
+    .prepare('PRAGMA table_info(reservas)')
+    .all()
+    .map((c) => c.name);
+  if (!resCols.includes('anunciante'))
+    db.exec("ALTER TABLE reservas ADD COLUMN anunciante TEXT NOT NULL DEFAULT ''");
+  const ledCols = db
+    .prepare('PRAGMA table_info(leds)')
+    .all()
+    .map((c) => c.name);
+  if (!ledCols.includes('espacos_total'))
+    db.exec('ALTER TABLE leds ADD COLUMN espacos_total INTEGER');
+  const cfgCols = db
+    .prepare('PRAGMA table_info(config)')
+    .all()
+    .map((c) => c.name);
+  if (!cfgCols.includes('max_clientes_por_led'))
+    db.exec('ALTER TABLE config ADD COLUMN max_clientes_por_led INTEGER NOT NULL DEFAULT 8');
+  if (!cfgCols.includes('logo_dataurl'))
+    db.exec("ALTER TABLE config ADD COLUMN logo_dataurl TEXT NOT NULL DEFAULT ''");
+  const notCols = db
+    .prepare('PRAGMA table_info(notificacoes)')
+    .all()
+    .map((c) => c.name);
+  if (!notCols.includes('cidade_id'))
+    db.exec("ALTER TABLE notificacoes ADD COLUMN cidade_id TEXT NOT NULL DEFAULT ''");
+} catch {
+  // ignore: migrações são idempotentes; coluna pode já existir
+}
 
 // Suporte opcional a Supabase/PostgreSQL via DATABASE_URL.
 // O restante do backend (index.js) usa a API síncrona de better-sqlite3.
@@ -160,9 +208,11 @@ try {
 // (assíncrono, com pg) e ajuste index.js para importá-lo em vez de './db'.
 const USING_POSTGRES = !!process.env.DATABASE_URL;
 if (USING_POSTGRES) {
-  console.warn('[db] DATABASE_URL detectado: o SQLite não será usado. ' +
-    'Para produção no Supabase/Render, importe backend/src/db.supabase.js ' +
-    'em src/index.js e adapte as chamadas para o estilo assíncrono (pg).');
+  console.warn(
+    '[db] DATABASE_URL detectado: o SQLite não será usado. ' +
+      'Para produção no Supabase/Render, importe backend/src/db.supabase.js ' +
+      'em src/index.js e adapte as chamadas para o estilo assíncrono (pg).',
+  );
 }
 
 module.exports = db;

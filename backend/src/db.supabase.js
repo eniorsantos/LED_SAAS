@@ -24,9 +24,15 @@ async function run(sql, params = []) {
 }
 function prepare(sql) {
   return {
-    async run(...params) { return run(sql, params); },
-    async get(...params) { return get(sql, params); },
-    async all(...params) { return query(sql, params); },
+    async run(...params) {
+      return run(sql, params);
+    },
+    async get(...params) {
+      return get(sql, params);
+    },
+    async all(...params) {
+      return query(sql, params);
+    },
   };
 }
 async function transaction(fn) {
@@ -35,9 +41,17 @@ async function transaction(fn) {
     await client.query('BEGIN');
     const result = await fn({
       prepare: (s) => ({
-        async run(...p) { return (await client.query(s, p)); },
-        async get(...p) { const r = await client.query(s, p); return r.rows[0] || null; },
-        async all(...p) { const r = await client.query(s, p); return r.rows; },
+        async run(...p) {
+          return await client.query(s, p);
+        },
+        async get(...p) {
+          const r = await client.query(s, p);
+          return r.rows[0] || null;
+        },
+        async all(...p) {
+          const r = await client.query(s, p);
+          return r.rows;
+        },
       }),
     });
     await client.query('COMMIT');
