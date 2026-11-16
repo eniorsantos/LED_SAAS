@@ -1,10 +1,35 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from 'recharts'
-import './index.css'
-import { api, API, salvarTema, FALLBACK_DASH, corStatus, STATUS_ROTULO, br, type Dashboard, type Me, type Notif, type PlanilhaRow } from './api'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  LineChart,
+  Line,
+} from 'recharts';
+import './index.css';
+import {
+  api,
+  API,
+  salvarTema,
+  FALLBACK_DASH,
+  corStatus,
+  STATUS_ROTULO,
+  br,
+  type Dashboard,
+  type Me,
+  type Notif,
+  type PlanilhaRow,
+} from './api';
 
-type Tab = 'dashboard' | 'planilha' | 'relatorios' | 'graficos' | 'reservas'
-type SecaoConfig = 'acesso' | 'cidades' | 'tema' | 'importar' | 'logo' | 'backup'
+type Tab = 'dashboard' | 'planilha' | 'relatorios' | 'graficos' | 'reservas';
+type SecaoConfig = 'acesso' | 'cidades' | 'tema' | 'importar' | 'logo' | 'backup';
 
 // Toast arrastável: aparece em todo login/refresh; fechar só dispensa nesta
 // sessão (não marca como lida — isso é feito na central). Arraste pelo título.
@@ -16,20 +41,40 @@ function ToastItem({ n, onView, onClose }: { n: Notif; onView: () => void; onClo
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
     grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* sem captura: arrasto parcial */ }
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* sem captura: arrasto parcial */
+    }
   };
   const onMove = (e: React.PointerEvent) => {
     const g = grab.current;
     if (!g || !ref.current) return;
     setPos({ x: e.clientX - g.dx, y: e.clientY - g.dy, w: ref.current.offsetWidth });
   };
-  const onUp = () => { grab.current = null; };
+  const onUp = () => {
+    grab.current = null;
+  };
   return (
-    <div ref={ref} className={`toast ${n.evento === 'vencimento' ? 'red' : ''}`}
-      style={pos ? { position: 'fixed', left: pos.x, top: pos.y, width: pos.w, margin: 0, zIndex: 60 } : undefined}>
-      <b style={{ cursor: 'move', touchAction: 'none', userSelect: 'none' }}
-        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
-        aria-label="Arraste para mover">⠿ {n.titulo}</b>
+    <div
+      ref={ref}
+      className={`toast ${n.evento === 'vencimento' ? 'red' : ''}`}
+      style={
+        pos
+          ? { position: 'fixed', left: pos.x, top: pos.y, width: pos.w, margin: 0, zIndex: 60 }
+          : undefined
+      }
+    >
+      <b
+        style={{ cursor: 'move', touchAction: 'none', userSelect: 'none' }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        aria-label="Arraste para mover"
+      >
+        ⠿ {n.titulo}
+      </b>
       {n.corpo}
       <div className="actions">
         <button onClick={onView}>Ver campanha</button>
@@ -40,19 +85,22 @@ function ToastItem({ n, onView, onClose }: { n: Notif; onView: () => void; onClo
 }
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('led_token') || '')
-  const [perfil, setPerfil] = useState(() => localStorage.getItem('led_perfil') || '')
+  const [token, setToken] = useState(() => localStorage.getItem('led_token') || '');
+  const [perfil, setPerfil] = useState(() => localStorage.getItem('led_perfil') || '');
   const [logando, setLogando] = useState(false);
   const isAdmin = perfil === 'admin';
   const [login, setLogin] = useState('admin');
   const [senha, setSenha] = useState('admin123');
   const [loginErro, setLoginErro] = useState('');
-  const [cidade, setCidade] = useState(() => new URLSearchParams(location.search).get('cidades') || '');
+  const [cidade, setCidade] = useState(
+    () => new URLSearchParams(location.search).get('cidades') || '',
+  );
   const [tab, setTab] = useState<Tab>('planilha');
   const [dash, setDash] = useState<Dashboard>(FALLBACK_DASH);
   const [online, setOnline] = useState(false);
   const [rows, setRows] = useState<PlanilhaRow[]>([]);
-  const [q, setQ] = useState(''); const [stFilter, setStFilter] = useState('');
+  const [q, setQ] = useState('');
+  const [stFilter, setStFilter] = useState('');
   const [importMsg, setImportMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   // Seleção múltipla da planilha (exclusão em lote)
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
@@ -69,7 +117,9 @@ export default function App() {
         texto: `Excluídas ${r.excluidas.length}.${r.ignoradas.length ? ` Ignoradas: ${r.ignoradas.map((x) => `${x.id} (${x.motivo})`).join(' · ')}` : ''}`,
       });
       carregar();
-    } catch (e: any) { setImportMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setImportMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   // Navegação: troca a aba e rola até o painel (senão parece que nada aconteceu)
   const painelRef = useRef<HTMLDivElement>(null);
@@ -79,8 +129,14 @@ export default function App() {
     setTimeout(() => painelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
   const [destaque, setDestaque] = useState<string | null>(null);
-  const [onboarding, setOnboarding] = useState(() => localStorage.getItem('led_onboarding') !== '1');
-  const [editInline, setEditInline] = useState<{ id: string; campo: 'anunciante' | 'inicio' | 'fim'; valor: string } | null>(null);
+  const [onboarding, setOnboarding] = useState(
+    () => localStorage.getItem('led_onboarding') !== '1',
+  );
+  const [editInline, setEditInline] = useState<{
+    id: string;
+    campo: 'anunciante' | 'inicio' | 'fim';
+    valor: string;
+  } | null>(null);
   const extrairAnunciante = (n: Notif): string | null => {
     if (n.anunciante) return n.anunciante;
     const t = (n.corpo || '').replace(/^Reserva de /i, '');
@@ -89,7 +145,10 @@ export default function App() {
     return nome || null;
   };
   const verCampanha = (n: Notif) => {
-    if (online && me && !can('planilha')) { setTab('dashboard'); return; }
+    if (online && me && !can('planilha')) {
+      setTab('dashboard');
+      return;
+    }
     irParaAba('planilha');
     const nome = extrairAnunciante(n);
     if (nome) setQ(nome);
@@ -103,15 +162,26 @@ export default function App() {
     return () => clearTimeout(t);
   }, [destaque]);
   // dias de hoje (dash.hoje) até a data: >0 faltam, 0 encerra hoje, <0 encerrou
-  const diasAte = (iso: string) => Math.round(
-    (new Date(iso + 'T12:00:00').getTime() - new Date(dash.hoje + 'T12:00:00').getTime()) / 86400000);
-  const [sortK, setSortK] = useState('inicio'); const [sortD, setSortD] = useState<1 | -1>(1);
+  const diasAte = (iso: string) =>
+    Math.round(
+      (new Date(iso + 'T12:00:00').getTime() - new Date(dash.hoje + 'T12:00:00').getTime()) /
+        86400000,
+    );
+  const [sortK, setSortK] = useState('inicio');
+  const [sortD, setSortD] = useState<1 | -1>(1);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [sino, setSino] = useState(false);
   const [ledSel, setLedSel] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [lat, setLat] = useState('0.6s');
-  const [form, setForm] = useState({ anunciante: '', led_codigo: 'AJU 01', cidade_id: 'aracaju', inicio: '2026-11-01', fim: '2026-12-01', reservada: false });
+  const [form, setForm] = useState({
+    anunciante: '',
+    led_codigo: 'AJU 01',
+    cidade_id: 'aracaju',
+    inicio: '2026-11-01',
+    fim: '2026-12-01',
+    reservada: false,
+  });
   const [editCampId, setEditCampId] = useState<string | null>(null);
   // Menu de cadastro de LEDs (padrão visual do painel)
   const [cidades, setCidades] = useState<{ id: string; nome: string; uf: string }[]>([]);
@@ -124,48 +194,104 @@ export default function App() {
   // Menu de usuários (admin): CRUD + cidades + recursos por usuário
   const [usersLista, setUsersLista] = useState<any[]>([]);
   const [recursosLista, setRecursosLista] = useState<{ id: string; rotulo: string }[]>([]);
-  const [userForm, setUserForm] = useState({ login: '', senha: '', perfil: 'visualizador', nome: '', cidades: [] as string[], permissoes: [] as string[] });
+  const [userForm, setUserForm] = useState({
+    login: '',
+    senha: '',
+    perfil: 'visualizador',
+    nome: '',
+    cidades: [] as string[],
+    permissoes: [] as string[],
+  });
   const [userEditando, setUserEditando] = useState<string | null>(null);
   const [userMsg, setUserMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   // Múltiplas reservas por campanha (cada uma notifica o início próximo)
-  const [resMenu, setResMenu] = useState<{ campId: string; anunciante: string; led: string } | null>(null);
+  const [resMenu, setResMenu] = useState<{
+    campId: string;
+    anunciante: string;
+    led: string;
+  } | null>(null);
   const [resLista, setResLista] = useState<any[]>([]);
-  const [resForm, setResForm] = useState({ anunciante: '', inicio: '2026-12-01', fim: '2026-12-31' });
+  const [resForm, setResForm] = useState({
+    anunciante: '',
+    inicio: '2026-12-01',
+    fim: '2026-12-31',
+  });
   const [resMsg, setResMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   // Menu global de cadastro de reservas (padrão LEDs/Usuários)
   const [resListaG, setResListaG] = useState<any[]>([]);
   const [resCamps, setResCamps] = useState<any[]>([]);
-  const [resFormG, setResFormG] = useState({ campanha_id: '', led_codigo: '', anunciante: '', inicio: '2026-12-01', fim: '2026-12-31' });
+  const [resFormG, setResFormG] = useState({
+    campanha_id: '',
+    led_codigo: '',
+    anunciante: '',
+    inicio: '2026-12-01',
+    fim: '2026-12-31',
+  });
   // Janela independente de edição de reserva (a criação fica no formulário)
-  const [resEditM, setResEditM] = useState<{ id: string; campLabel: string; anunciante: string; inicio: string; fim: string } | null>(null);
+  const [resEditM, setResEditM] = useState<{
+    id: string;
+    campLabel: string;
+    anunciante: string;
+    inicio: string;
+    fim: string;
+  } | null>(null);
   const [resMsgM, setResMsgM] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const [resMsgG, setResMsgG] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
-  const [ledForm, setLedForm] = useState({ codigo: '', endereco: '', cidade_id: 'aracaju', espacos: '' });
+  const [ledForm, setLedForm] = useState({
+    codigo: '',
+    endereco: '',
+    cidade_id: 'aracaju',
+    espacos: '',
+  });
   const [ledEditando, setLedEditando] = useState<string | null>(null);
   const [ledMsg, setLedMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   // Tema (paleta configurável): lido da API e aplicado nas variáveis CSS
-  const [tema, setTema] = useState<{ vars: Record<string, string>; rotulos: Record<string, string> }>({ vars: {}, rotulos: {} });
+  const [tema, setTema] = useState<{
+    vars: Record<string, string>;
+    rotulos: Record<string, string>;
+  }>({ vars: {}, rotulos: {} });
   // Logo da empresa (persistida no back; exibição fixa 38px no lugar do ícone)
   const [logo, setLogo] = useState<string | null>(null);
   const [logoPrev, setLogoPrev] = useState<string | null>(null);
   const [logoMsg, setLogoMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const lerLogo = (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) { setLogoMsg({ tipo: 'erro', texto: 'Envie um arquivo de imagem.' }); return; }
-    if (file.size > 512 * 1024) { setLogoMsg({ tipo: 'erro', texto: 'Máximo 512KB.' }); return; }
+    if (!file.type.startsWith('image/')) {
+      setLogoMsg({ tipo: 'erro', texto: 'Envie um arquivo de imagem.' });
+      return;
+    }
+    if (file.size > 512 * 1024) {
+      setLogoMsg({ tipo: 'erro', texto: 'Máximo 512KB.' });
+      return;
+    }
     const rd = new FileReader();
-    rd.onload = () => { setLogoPrev(String(rd.result)); setLogoMsg(null); };
+    rd.onload = () => {
+      setLogoPrev(String(rd.result));
+      setLogoMsg(null);
+    };
     rd.readAsDataURL(file);
   };
   const salvarLogo = async () => {
     if (!logoPrev) return;
     setLogoMsg(null);
-    try { await api.salvarLogo(logoPrev); setLogo(logoPrev); setLogoPrev(null); setLogoMsg({ tipo: 'ok', texto: 'Logo salva.' }); }
-    catch (e: any) { setLogoMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.salvarLogo(logoPrev);
+      setLogo(logoPrev);
+      setLogoPrev(null);
+      setLogoMsg({ tipo: 'ok', texto: 'Logo salva.' });
+    } catch (e: any) {
+      setLogoMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const removerLogo = async () => {
-    try { await api.removerLogo(); setLogo(null); setLogoPrev(null); setLogoMsg({ tipo: 'ok', texto: 'Logo removida.' }); }
-    catch (e: any) { setLogoMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.removerLogo();
+      setLogo(null);
+      setLogoPrev(null);
+      setLogoMsg({ tipo: 'ok', texto: 'Logo removida.' });
+    } catch (e: any) {
+      setLogoMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const [temaMsg, setTemaMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const [configSecao, setConfigSecao] = useState<SecaoConfig>('acesso');
@@ -189,15 +315,19 @@ export default function App() {
       const m = await api.me().catch(() => null);
       const t = await api.tema().catch(() => null);
       const lg = await api.logo().catch(() => null);
-      setDash(d); setOnline(true);
+      setDash(d);
+      setOnline(true);
       if (t) setTema(t);
       if (lg) setLogo(lg.logo);
-      setRows(p); setNotifs(n.map((x) => ({ ...x, titulo: x.titulo, corpo: x.corpo })));
+      setRows(p);
+      setNotifs(n.map((x) => ({ ...x, titulo: x.titulo, corpo: x.corpo })));
       if (m) setMe(m);
       if (cids.length) setCidades(cids);
       if (leds.length) setLedsLista(leds);
       setLat(`${((performance.now() - t0) / 1000).toFixed(1)}s`);
-    } catch { setOnline(false); }
+    } catch {
+      setOnline(false);
+    }
   }, [cidade]);
   // Aba Relatórios: dimensão + cidade/LED/cliente + status + período → PDF
   const [dismissed, setDismissed] = useState<(number | string)[]>([]);
@@ -205,19 +335,32 @@ export default function App() {
   const [relCidade, setRelCidade] = useState('');
   const [relLed, setRelLed] = useState('');
   const [relAnu, setRelAnu] = useState('');
-  const [relStatus, setRelStatus] = useState<string[]>(['veiculando', 'a_vencer', 'agendada', 'reservada', 'vencida']);
+  const [relStatus, setRelStatus] = useState<string[]>([
+    'veiculando',
+    'a_vencer',
+    'agendada',
+    'reservada',
+    'vencida',
+  ]);
   const [relDe, setRelDe] = useState('');
   const [relAte, setRelAte] = useState('');
   const [relMsg, setRelMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const relChave = (r: PlanilhaRow) =>
     relDim === 'led' ? `${r.led} — ${r.cidade}` : relDim === 'cidade' ? r.cidade : r.anunciante;
-  const relFiltradas = useMemo(() => rows.filter((r) =>
-    (!relCidade || r.cidade === (cidades.find((c) => c.id === relCidade)?.nome || relCidade)) &&
-    (!relLed || r.led === relLed) &&
-    (!relAnu || (r.anunciante || '').toLowerCase().includes(relAnu.toLowerCase())) &&
-    (!relStatus.length || relStatus.includes(r.status)) &&
-    (!relDe || r.fim >= relDe) && (!relAte || r.inicio <= relAte),
-  ), [rows, relCidade, relLed, relAnu, relStatus, relDe, relAte, cidades]);
+  const relFiltradas = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          (!relCidade ||
+            r.cidade === (cidades.find((c) => c.id === relCidade)?.nome || relCidade)) &&
+          (!relLed || r.led === relLed) &&
+          (!relAnu || (r.anunciante || '').toLowerCase().includes(relAnu.toLowerCase())) &&
+          (!relStatus.length || relStatus.includes(r.status)) &&
+          (!relDe || r.fim >= relDe) &&
+          (!relAte || r.inicio <= relAte),
+      ),
+    [rows, relCidade, relLed, relAnu, relStatus, relDe, relAte, cidades],
+  );
   const relGrupos = useMemo(() => {
     const m = new Map<string, PlanilhaRow[]>();
     for (const r of relFiltradas) {
@@ -233,10 +376,23 @@ export default function App() {
       const token = localStorage.getItem('led_token');
       const resp = await fetch(`${API}/api/relatorios/pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ dimensao: relDim, cidades: relCidade, status: relStatus, anunciante: relAnu, de: relDe, ate: relAte }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          dimensao: relDim,
+          cidades: relCidade,
+          status: relStatus,
+          anunciante: relAnu,
+          de: relDe,
+          ate: relAte,
+        }),
       });
-      if (!resp.ok) throw new Error((await resp.json().catch(() => ({})) as any).erro || `HTTP ${resp.status}`);
+      if (!resp.ok)
+        throw new Error(
+          ((await resp.json().catch(() => ({}))) as any).erro || `HTTP ${resp.status}`,
+        );
       const blob = await resp.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -244,23 +400,19 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(a.href);
       setRelMsg({ tipo: 'ok', texto: `PDF gerado (${relFiltradas.length} campanhas).` });
-    } catch (e: any) { setRelMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setRelMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   // Tipo de gráfico da distribuição por status
   const [tipoDist, setTipoDist] = useState<'rosca' | 'pizza' | 'barras'>('rosca');
-  useEffect(() => { carregar(); const i = setInterval(carregar, 30000); return () => clearInterval(i); }, [carregar]);
+  useEffect(() => {
+    carregar();
+    const i = setInterval(carregar, 30000);
+    return () => clearInterval(i);
+  }, [carregar]);
 
   const podeEditar = can('campanhas_editar');
-  // Atalhos de teclado: Ctrl+N nova campanha, Ctrl+S salvar, Escape cancelar/fechar
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n' && podeEditar) { e.preventDefault(); abrirNovaCampanha(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's' && editInline) { e.preventDefault(); salvarEditInline(); }
-      if (e.key === 'Escape') { if (editInline) setEditInline(null); if (modal) setModal(false); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [podeEditar, editInline, modal]);
 
   // Gantt: um bloco por campanha COM NOME (veiculando, reservada e vencida) +
   // LIVRE completando — LED nunca parece vazio havendo campanhas
@@ -272,22 +424,36 @@ export default function App() {
       const csv = await file.text();
       const r = await api.importarPlanilha(csv);
       const det = r.ignoradas.length
-        ? ` Ignoradas (${r.ignoradas.length}): ` + r.ignoradas.slice(0, 5).map((x) => `linha ${x.linha} (${x.motivo})`).join(' · ') + (r.ignoradas.length > 5 ? ' …' : '')
+        ? ` Ignoradas (${r.ignoradas.length}): ` +
+          r.ignoradas
+            .slice(0, 5)
+            .map((x) => `linha ${x.linha} (${x.motivo})`)
+            .join(' · ') +
+          (r.ignoradas.length > 5 ? ' …' : '')
         : '';
       const res = r.reservas_criadas ? ` (+${r.reservas_criadas} reserva(s))` : '';
-      setImportMsg({ tipo: r.ignoradas.length ? 'erro' : 'ok', texto: `Importadas ${r.criadas} de ${r.total}${res}.${det}` });
+      setImportMsg({
+        tipo: r.ignoradas.length ? 'erro' : 'ok',
+        texto: `Importadas ${r.criadas} de ${r.total}${res}.${det}`,
+      });
       carregar();
-    } catch (e: any) { setImportMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setImportMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Opções do filtro de cidade: sempre da API (novas cidades aparecem sozinhas)
   const cidadesOpts = cidades.length
     ? cidades
-    : [{ id: 'aracaju', nome: 'Aracaju', uf: 'SE' }, { id: 'salvador', nome: 'Salvador', uf: 'BA' }];
+    : [
+        { id: 'aracaju', nome: 'Aracaju', uf: 'SE' },
+        { id: 'salvador', nome: 'Salvador', uf: 'BA' },
+      ];
   const cidadeNome = (id: string) => cidadesOpts.find((c) => c.id === id)?.nome || id || 'Todas';
 
   const trocarCidade = (v: string) => {
-    setCidade(v); setSelecionadas([]);
+    setCidade(v);
+    setSelecionadas([]);
     setDismissed([]);
     // LED selecionado fora da cidade sai da seleção
     if (ledSel) {
@@ -296,60 +462,102 @@ export default function App() {
       if (led && v && led.cidade_id !== v) setLedSel(null);
     }
     const u = new URL(location.href);
-    if (!v) u.searchParams.delete('cidades'); else u.searchParams.set('cidades', v);
+    if (!v) u.searchParams.delete('cidades');
+    else u.searchParams.set('cidades', v);
     history.replaceState({}, '', u);
   };
 
   const linhas = useMemo(() => {
     let r = [...rows];
-    if (q) { const s = q.toLowerCase(); r = r.filter((x) => [x.cidade, x.led, x.anunciante].join(' ').toLowerCase().includes(s)); }
+    if (q) {
+      const s = q.toLowerCase();
+      r = r.filter((x) => [x.cidade, x.led, x.anunciante].join(' ').toLowerCase().includes(s));
+    }
     if (stFilter) r = r.filter((x) => x.status === stFilter);
     r.sort((a, b) => String((a as any)[sortK]).localeCompare(String((b as any)[sortK])) * sortD);
     return r;
   }, [rows, q, stFilter, sortK, sortD]);
   const ganttBlocos = (camps: any[]) => {
-    const clsPorStatus: Record<string, string> = { veiculando: 'veic', a_vencer: 'veic', agendada: 'res', reservada: 'res', vencida: 'venc' };
-    const rotuloStatus: Record<string, string> = { agendada: 'RESERVADA', reservada: 'RESERVADA', vencida: 'ENCERRADA' };
-    const blocos: { cls: string; label: string; w: number; title?: string }[] = camps.map((c: any) => {
-      const cls = clsPorStatus[c.status] || 'veic';
-      const pre = rotuloStatus[c.status] ? `${rotuloStatus[c.status]} · ` : '';
-      return {
-        cls, label: `${pre}${String(c.anunciante).toUpperCase()}`, w: 0,
-        title: `${c.anunciante} · ${br(c.inicio)} → ${br(c.fim)} · ${STATUS_ROTULO[c.status] || c.status}`,
-      };
-    });
+    const clsPorStatus: Record<string, string> = {
+      veiculando: 'veic',
+      a_vencer: 'veic',
+      agendada: 'res',
+      reservada: 'res',
+      vencida: 'venc',
+    };
+    const rotuloStatus: Record<string, string> = {
+      agendada: 'RESERVADA',
+      reservada: 'RESERVADA',
+      vencida: 'ENCERRADA',
+    };
+    const blocos: { cls: string; label: string; w: number; title?: string }[] = camps.map(
+      (c: any) => {
+        const cls = clsPorStatus[c.status] || 'veic';
+        const pre = rotuloStatus[c.status] ? `${rotuloStatus[c.status]} · ` : '';
+        return {
+          cls,
+          label: `${pre}${String(c.anunciante).toUpperCase()}`,
+          w: 0,
+          title: `${c.anunciante} · ${br(c.inicio)} → ${br(c.fim)} · ${STATUS_ROTULO[c.status] || c.status}`,
+        };
+      },
+    );
     if (!blocos.length) return [{ cls: 'livre', label: 'LIVRE', w: 96 }];
     const w = Math.min(40, Math.max(10, Math.floor(88 / blocos.length)));
-    blocos.forEach((b) => { b.w = w; });
+    blocos.forEach((b) => {
+      b.w = w;
+    });
     const usado = w * blocos.length;
     if (usado < 90) blocos.push({ cls: 'livre', label: 'LIVRE', w: 96 - usado });
     return blocos;
   };
 
   const fazerLogin = async () => {
-    setLogando(true)
-    setLoginErro('')
+    setLogando(true);
+    setLoginErro('');
     try {
       const r = await api.login(login, senha);
-      localStorage.setItem('led_token', r.token); localStorage.setItem('led_perfil', r.perfil);
-      setToken(r.token); setPerfil(r.perfil); setDismissed([]); carregar();
+      localStorage.setItem('led_token', r.token);
+      localStorage.setItem('led_perfil', r.perfil);
+      setToken(r.token);
+      setPerfil(r.perfil);
+      setDismissed([]);
+      carregar();
       if (localStorage.getItem('led_onboarding') !== '1') setOnboarding(true);
+    } catch {
+      setLoginErro('Login inválido — use admin/admin123 (demo). Entrando offline…');
+      setToken('offline');
+    } finally {
+      setLogando(false);
     }
-    catch { setLoginErro('Login inválido — use admin/admin123 (demo). Entrando offline…'); setToken('offline'); }
-    finally { setLogando(false) }
   };
-  const sair = () => { localStorage.removeItem('led_token'); localStorage.removeItem('led_perfil'); setToken(''); setPerfil(''); };
+  const sair = () => {
+    localStorage.removeItem('led_token');
+    localStorage.removeItem('led_perfil');
+    setToken('');
+    setPerfil('');
+  };
 
-  const salvarInline = async (row: PlanilhaRow, campo: 'anunciante' | 'inicio' | 'fim', valor: string) => {
+  const salvarInline = async (
+    row: PlanilhaRow,
+    campo: 'anunciante' | 'inicio' | 'fim',
+    valor: string,
+  ) => {
     try {
       if (row.id) await api.editarCampanha(row.id, { [campo]: valor });
       else {
-        const camp = await api.campanhas().then((cs) => cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led));
+        const camp = await api
+          .campanhas()
+          .then((cs) =>
+            cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led),
+          );
         if (!camp) return;
         await api.editarCampanha(camp.id, { [campo]: valor });
       }
       carregar();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   const iniciarEditInline = (row: PlanilhaRow, campo: 'anunciante' | 'inicio' | 'fim') => {
@@ -362,7 +570,9 @@ export default function App() {
       await api.editarCampanha(editInline.id, { [editInline.campo]: editInline.valor });
       setEditInline(null);
       carregar();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   // Aplica a paleta nas variáveis CSS (painel, fontes, gráficos via corStatus)
@@ -375,10 +585,15 @@ export default function App() {
   // Aba padrão respeita a visibilidade do usuário (só com permissões carregadas)
   useEffect(() => {
     if (!me || !online) return;
-    if (tab === 'planilha' && !can('planilha')) setTab('dashboard');
-    else if (tab === 'graficos' && !can('graficos')) setTab('dashboard');
-    else if (tab === 'relatorios' && !can('relatorios')) setTab('dashboard');
-    else if (tab === 'reservas' && !can('reservas')) setTab('dashboard');
+    if (tab === 'planilha' && !can('planilha')) {
+      setTimeout(() => setTab('dashboard'), 0);
+    } else if (tab === 'graficos' && !can('graficos')) {
+      setTimeout(() => setTab('dashboard'), 0);
+    } else if (tab === 'relatorios' && !can('relatorios')) {
+      setTimeout(() => setTab('dashboard'), 0);
+    } else if (tab === 'reservas' && !can('reservas')) {
+      setTimeout(() => setTab('dashboard'), 0);
+    }
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const criarCampanha = async () => {
@@ -386,45 +601,99 @@ export default function App() {
       if (editCampId) {
         await api.editarCampanha(editCampId, { ...form, reservada: form.reservada ? 1 : 0 });
       } else {
-        await api.criarCampanha({ ...form, id: 'c' + Date.now(), cidade_id: form.cidade_id || cidade || 'aracaju', reservada: form.reservada ? 1 : 0 });
+        await api.criarCampanha({
+          ...form,
+          id: 'c' + Date.now(),
+          cidade_id: form.cidade_id || cidade || 'aracaju',
+          reservada: form.reservada ? 1 : 0,
+        });
       }
-      setModal(false); setEditCampId(null); carregar();
-    } catch (e: any) { alert(e.message); }
+      setModal(false);
+      setEditCampId(null);
+      carregar();
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
   const abrirNovaCampanha = (led?: string) => {
     setEditCampId(null);
-    setForm({ anunciante: '', led_codigo: led || 'AJU 01', cidade_id: cidade || 'aracaju', inicio: '2026-11-01', fim: '2026-12-01', reservada: false });
+    setForm({
+      anunciante: '',
+      led_codigo: led || 'AJU 01',
+      cidade_id: cidade || 'aracaju',
+      inicio: '2026-11-01',
+      fim: '2026-12-01',
+      reservada: false,
+    });
     setModal(true);
   };
+  // Atalhos de teclado: Ctrl+N nova campanha, Ctrl+S salvar, Escape cancelar/fechar
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n' && podeEditar) {
+        e.preventDefault();
+        abrirNovaCampanha();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && editInline) {
+        e.preventDefault();
+        salvarEditInline();
+      }
+      if (e.key === 'Escape') {
+        if (editInline) setEditInline(null);
+        if (modal) setModal(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [podeEditar, editInline, modal]);
   const abrirEditarCampanha = async (row: PlanilhaRow) => {
     let id: string | undefined = row.id;
     if (!id) {
-      const camp = await api.campanhas().then((cs) => cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led)).catch(() => null);
+      const camp = await api
+        .campanhas()
+        .then((cs) =>
+          cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led),
+        )
+        .catch(() => null);
       if (!camp) return;
       id = camp.id;
     }
     if (!id) return;
-    const camp = await api.campanhas().then((cs) => cs.find((c: any) => c.id === id)).catch(() => null);
+    const camp = await api
+      .campanhas()
+      .then((cs) => cs.find((c: any) => c.id === id))
+      .catch(() => null);
     setEditCampId(id);
     setForm({
       anunciante: row.anunciante,
       led_codigo: row.led,
       cidade_id: camp?.cidade_id || cidade || 'aracaju',
-      inicio: row.inicio, fim: row.fim,
-      reservada: (camp?.reservada ? true : row.status === 'agendada' || row.status === 'reservada'),
+      inicio: row.inicio,
+      fim: row.fim,
+      reservada: camp?.reservada ? true : row.status === 'agendada' || row.status === 'reservada',
     });
     setModal(true);
   };
   const excluirCampanha = async (row: PlanilhaRow) => {
     let id: string | undefined = row.id;
     if (!id) {
-      const camp = await api.campanhas().then((cs) => cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led)).catch(() => null);
+      const camp = await api
+        .campanhas()
+        .then((cs) =>
+          cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led),
+        )
+        .catch(() => null);
       if (!camp) return;
       id = camp.id;
     }
     if (!id) return;
     if (!confirm(`Excluir a campanha "${row.anunciante}" (${row.led})?`)) return;
-    try { await api.excluirCampanha(id); carregar(); } catch (e: any) { alert(e.message); }
+    try {
+      await api.excluirCampanha(id);
+      carregar();
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
   // Dados de acesso para a aba Config (usuários + catálogo de recursos)
 
@@ -432,8 +701,11 @@ export default function App() {
     setUserMsg(null);
     try {
       const [us, recs] = await Promise.all([api.usuarios(), api.recursos()]);
-      setUsersLista(us); setRecursosLista(recs);
-    } catch (e: any) { setUserMsg({ tipo: 'erro', texto: e.message }); }
+      setUsersLista(us);
+      setRecursosLista(recs);
+    } catch (e: any) {
+      setUserMsg({ tipo: 'erro', texto: e.message });
+    }
   }, []);
   const alternar = (lista: string[], v: string) =>
     lista.includes(v) ? lista.filter((x) => x !== v) : [...lista, v];
@@ -445,7 +717,12 @@ export default function App() {
     }
     try {
       if (userEditando) {
-        const body: any = { perfil: userForm.perfil, nome: userForm.nome, cidades: userForm.cidades, permissoes: userForm.permissoes };
+        const body: any = {
+          perfil: userForm.perfil,
+          nome: userForm.nome,
+          cidades: userForm.cidades,
+          permissoes: userForm.permissoes,
+        };
         if (userForm.senha) body.senha = userForm.senha;
         await api.editarUsuario(userEditando, body);
         setUserMsg({ tipo: 'ok', texto: 'Usuário atualizado.' });
@@ -453,23 +730,41 @@ export default function App() {
         await api.criarUsuario(userForm);
         setUserMsg({ tipo: 'ok', texto: `Usuário ${userForm.login} criado.` });
       }
-      setUserForm({ login: '', senha: '', perfil: 'visualizador', nome: '', cidades: [], permissoes: [] });
+      setUserForm({
+        login: '',
+        senha: '',
+        perfil: 'visualizador',
+        nome: '',
+        cidades: [],
+        permissoes: [],
+      });
       setUserEditando(null);
       setUsersLista(await api.usuarios());
       carregar();
-    } catch (e: any) { setUserMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setUserMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const excluirUsuario = async (login: string) => {
     if (!confirm(`Excluir o usuário "${login}"?`)) return;
-    try { await api.excluirUsuario(login); setUsersLista(await api.usuarios()); }
-    catch (e: any) { setUserMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.excluirUsuario(login);
+      setUsersLista(await api.usuarios());
+    } catch (e: any) {
+      setUserMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Múltiplas reservas: N períodos futuros por campanha, cada um com toast
   const abrirReservas = async (row: PlanilhaRow) => {
     let id: string | undefined = row.id;
     if (!id) {
-      const camp = await api.campanhas().then((cs) => cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led)).catch(() => null);
+      const camp = await api
+        .campanhas()
+        .then((cs) =>
+          cs.find((c: any) => c.anunciante === row.anunciante && c.led_codigo === row.led),
+        )
+        .catch(() => null);
       if (!camp) return;
       id = camp.id;
     }
@@ -477,7 +772,11 @@ export default function App() {
     setResMenu({ campId: id, anunciante: row.anunciante, led: row.led });
     setResMsg(null);
     setResForm({ anunciante: '', inicio: '2026-12-01', fim: '2026-12-31' });
-    try { setResLista(await api.reservas(id)); } catch (e: any) { setResMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      setResLista(await api.reservas(id));
+    } catch (e: any) {
+      setResMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const salvarReserva = async () => {
     if (!resMenu) return;
@@ -487,12 +786,19 @@ export default function App() {
       setResLista(await api.reservas(resMenu.campId));
       setResMsg({ tipo: 'ok', texto: 'Reserva adicionada — avisaremos o início próximo.' });
       carregar();
-    } catch (e: any) { setResMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setResMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const excluirReserva = async (id: string) => {
     if (!resMenu || !confirm('Excluir esta reserva?')) return;
-    try { await api.excluirReserva(id); setResLista(await api.reservas(resMenu.campId)); carregar(); }
-    catch (e: any) { setResMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.excluirReserva(id);
+      setResLista(await api.reservas(resMenu.campId));
+      carregar();
+    } catch (e: any) {
+      setResMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Aba de reservas: carrega lista global + campanhas ao abrir
@@ -500,11 +806,16 @@ export default function App() {
   const carregarAbaReservas = useCallback(async () => {
     try {
       const [lista, camps] = await Promise.all([api.listarReservas(cidade), api.campanhas()]);
-      setResListaG(lista); setResCamps(camps);
-    } catch (e: any) { setResMsgG({ tipo: 'erro', texto: e.message }); }
+      setResListaG(lista);
+      setResCamps(camps);
+    } catch (e: any) {
+      setResMsgG({ tipo: 'erro', texto: e.message });
+    }
   }, [cidade]);
   useEffect(() => {
-    if (tab === 'reservas' && can('reservas')) carregarAbaReservas();
+    if (tab === 'reservas' && can('reservas')) {
+      setTimeout(() => carregarAbaReservas(), 0);
+    }
   }, [tab, me, cidade]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (tela !== 'config') return;
@@ -525,7 +836,9 @@ export default function App() {
       else if (can('cidades')) setConfigSecao('cidades');
       else if (can('config')) setConfigSecao('tema');
     }
-    if (can('usuarios')) carregarAcesso();
+    if (can('usuarios')) {
+      setTimeout(() => carregarAcesso(), 0);
+    }
   }, [tela, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Menu global de reservas: lista tudo + criar/editar/excluir
@@ -536,7 +849,9 @@ export default function App() {
     setBkMsg(null);
     try {
       const token = localStorage.getItem('led_token');
-      const resp = await fetch(`${API}/api/backup`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const resp = await fetch(`${API}/api/backup`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const blob = await resp.blob();
       const a = document.createElement('a');
@@ -545,7 +860,9 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(a.href);
       setBkMsg({ tipo: 'ok', texto: 'Backup baixado.' });
-    } catch (e: any) { setBkMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setBkMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const restaurarBackup = async (file: File | undefined) => {
     if (!file) return;
@@ -553,65 +870,139 @@ export default function App() {
     try {
       const txt = await file.text();
       let body: any;
-      try { body = JSON.parse(txt); } catch { throw new Error('arquivo inválido (JSON)'); }
+      try {
+        body = JSON.parse(txt);
+      } catch {
+        throw new Error('arquivo inválido (JSON)');
+      }
       if (!body.tabelas) throw new Error('arquivo inválido (sem tabelas)');
       if (!confirm('Restaurar SUBSTITUI todo o banco. Continuar?')) return;
       const token = localStorage.getItem('led_token');
       const resp = await fetch(`${API}/api/backup/restaurar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(body),
       });
       const r = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(r.erro || `HTTP ${resp.status}`);
-      setBkMsg({ tipo: 'ok', texto: `Restaurado: ${r.contagem.campanhas} campanhas, ${r.contagem.reservas} reservas.` });
+      setBkMsg({
+        tipo: 'ok',
+        texto: `Restaurado: ${r.contagem.campanhas} campanhas, ${r.contagem.reservas} reservas.`,
+      });
       carregar();
-    } catch (e: any) { setBkMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setBkMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const conteudoReservas = () => (
     <>
       <div style={{ overflowX: 'auto' }}>
         <table>
-          <thead><tr><th>Anunciante</th><th>LED</th><th>Cidade</th><th>Início</th><th>Fim</th><th>Ações</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Anunciante</th>
+              <th>LED</th>
+              <th>Cidade</th>
+              <th>Início</th>
+              <th>Fim</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
           <tbody>
             {resListaG.map((r: any) => (
               <tr key={r.id}>
-                <td><b>{r.anunciante}</b></td><td>{r.led_codigo}</td><td>{r.cidade_nome}</td>
-                <td>{br(r.inicio)}</td><td>{br(r.fim)}</td>
+                <td>
+                  <b>{r.anunciante}</b>
+                </td>
+                <td>{r.led_codigo}</td>
+                <td>{r.cidade_nome}</td>
+                <td>{br(r.inicio)}</td>
+                <td>{br(r.fim)}</td>
                 <td className="row-actions">
                   <button onClick={() => abrirEdicaoReserva(r)}>Editar</button>
-                  <button className="danger" onClick={() => excluirReservaGlobal(r.id)}>Excluir</button>
+                  <button className="danger" onClick={() => excluirReservaGlobal(r.id)}>
+                    Excluir
+                  </button>
                 </td>
               </tr>
             ))}
-            {resListaG.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>Nenhuma reserva cadastrada.</td></tr>}
+            {resListaG.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
+                  Nenhuma reserva cadastrada.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
       <div className="spot-form">
         <h2 style={{ fontSize: '.85rem' }}>＋ NOVA RESERVA</h2>
         <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-          <label>LED a reservar
-            <select value={resFormG.led_codigo} onChange={(e) => setResFormG({ ...resFormG, led_codigo: e.target.value, campanha_id: '' })}>
+          <label>
+            LED a reservar
+            <select
+              value={resFormG.led_codigo}
+              onChange={(e) =>
+                setResFormG({ ...resFormG, led_codigo: e.target.value, campanha_id: '' })
+              }
+            >
               <option value="">— escolher LED —</option>
-              {(ledsLista.length ? ledsLista : dash.gantt_por_led).map((l: any) => <option key={l.codigo} value={l.codigo}>{l.codigo}</option>)}
+              {(ledsLista.length ? ledsLista : dash.gantt_por_led).map((l: any) => (
+                <option key={l.codigo} value={l.codigo}>
+                  {l.codigo}
+                </option>
+              ))}
             </select>
           </label>
-          <label>Campanha (vazio = automática: cria reservada se faltar)
-            <select value={resFormG.campanha_id} onChange={(e) => setResFormG({ ...resFormG, campanha_id: e.target.value })}>
+          <label>
+            Campanha (vazio = automática: cria reservada se faltar)
+            <select
+              value={resFormG.campanha_id}
+              onChange={(e) => setResFormG({ ...resFormG, campanha_id: e.target.value })}
+            >
               <option value="">— automática —</option>
-              {resCamps.filter((c: any) => !resFormG.led_codigo || c.led_codigo === resFormG.led_codigo).map((c: any) => (
-                <option key={c.id} value={c.id}>{c.anunciante} · {c.led_codigo} ({br(c.inicio)}→{br(c.fim)})</option>
-              ))}
+              {resCamps
+                .filter((c: any) => !resFormG.led_codigo || c.led_codigo === resFormG.led_codigo)
+                .map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    {c.anunciante} · {c.led_codigo} ({br(c.inicio)}→{br(c.fim)})
+                  </option>
+                ))}
             </select>
           </label>
         </div>
         <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <label>Anunciante (vazio = o da campanha)<input value={resFormG.anunciante} onChange={(e) => setResFormG({ ...resFormG, anunciante: e.target.value })} /></label>
-          <label>Início<input type="date" value={resFormG.inicio} onChange={(e) => setResFormG({ ...resFormG, inicio: e.target.value })} /></label>
-          <label>Fim<input type="date" value={resFormG.fim} onChange={(e) => setResFormG({ ...resFormG, fim: e.target.value })} /></label>
+          <label>
+            Anunciante (vazio = o da campanha)
+            <input
+              value={resFormG.anunciante}
+              onChange={(e) => setResFormG({ ...resFormG, anunciante: e.target.value })}
+            />
+          </label>
+          <label>
+            Início
+            <input
+              type="date"
+              value={resFormG.inicio}
+              onChange={(e) => setResFormG({ ...resFormG, inicio: e.target.value })}
+            />
+          </label>
+          <label>
+            Fim
+            <input
+              type="date"
+              value={resFormG.fim}
+              onChange={(e) => setResFormG({ ...resFormG, fim: e.target.value })}
+            />
+          </label>
         </div>
-        {resMsgG && <p className={`spot-msg ${resMsgG.tipo === 'ok' ? 'ok' : 'erro'}`}>{resMsgG.texto}</p>}
+        {resMsgG && (
+          <p className={`spot-msg ${resMsgG.tipo === 'ok' ? 'ok' : 'erro'}`}>{resMsgG.texto}</p>
+        )}
         <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
           <button onClick={salvarReservaGlobal}>Adicionar reserva</button>
         </div>
@@ -620,7 +1011,8 @@ export default function App() {
   );
   // Menu global de reservas: lista tudo + criar/editar/excluir
   const abrirReservasMenu = async () => {
-    setResModal(true); setResMsgG(null);
+    setResModal(true);
+    setResMsgG(null);
     carregarAbaReservas();
   };
   // Janela independente de edição: não usa o formulário de criação
@@ -629,20 +1021,30 @@ export default function App() {
     setResMsgM(null);
     setResEditM({
       id: r.id,
-      campLabel: camp ? `${camp.anunciante} · ${camp.led_codigo} (${br(camp.inicio)}→${br(camp.fim)})` : r.campanha_id,
-      anunciante: r.anunciante, inicio: r.inicio, fim: r.fim,
+      campLabel: camp
+        ? `${camp.anunciante} · ${camp.led_codigo} (${br(camp.inicio)}→${br(camp.fim)})`
+        : r.campanha_id,
+      anunciante: r.anunciante,
+      inicio: r.inicio,
+      fim: r.fim,
     });
   };
   const salvarEdicaoReserva = async () => {
     if (!resEditM) return;
     setResMsgM(null);
     try {
-      await api.editarReserva(resEditM.id, { anunciante: resEditM.anunciante, inicio: resEditM.inicio, fim: resEditM.fim });
+      await api.editarReserva(resEditM.id, {
+        anunciante: resEditM.anunciante,
+        inicio: resEditM.inicio,
+        fim: resEditM.fim,
+      });
       setResEditM(null);
       setResListaG(await api.listarReservas(cidade));
       setResMsgG({ tipo: 'ok', texto: 'Reserva atualizada.' });
       carregar();
-    } catch (e: any) { setResMsgM({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setResMsgM({ tipo: 'erro', texto: e.message });
+    }
   };
   const salvarReservaGlobal = async () => {
     setResMsgG(null);
@@ -659,19 +1061,38 @@ export default function App() {
           setResMsgG({ tipo: 'erro', texto: 'Escolha o LED e o anunciante (ou uma campanha).' });
           return;
         }
-        const r = await api.criarReservaLed({ led_codigo: resFormG.led_codigo, anunciante: resFormG.anunciante, inicio: resFormG.inicio, fim: resFormG.fim });
-        if (r.campanha_criada) msg = 'Reserva salva (campanha reservada criada) — avisaremos o início.';
+        const r = await api.criarReservaLed({
+          led_codigo: resFormG.led_codigo,
+          anunciante: resFormG.anunciante,
+          inicio: resFormG.inicio,
+          fim: resFormG.fim,
+        });
+        if (r.campanha_criada)
+          msg = 'Reserva salva (campanha reservada criada) — avisaremos o início.';
       }
-      setResFormG({ campanha_id: '', led_codigo: resFormG.led_codigo, anunciante: '', inicio: '2026-12-01', fim: '2026-12-31' });
+      setResFormG({
+        campanha_id: '',
+        led_codigo: resFormG.led_codigo,
+        anunciante: '',
+        inicio: '2026-12-01',
+        fim: '2026-12-31',
+      });
       setResListaG(await api.listarReservas(cidade));
       setResMsgG({ tipo: 'ok', texto: msg || 'Reserva salva — avisaremos o início próximo.' });
       carregar();
-    } catch (e: any) { setResMsgG({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setResMsgG({ tipo: 'erro', texto: e.message });
+    }
   };
   const excluirReservaGlobal = async (id: string) => {
     if (!confirm('Excluir esta reserva?')) return;
-    try { await api.excluirReserva(id); setResListaG(await api.listarReservas(cidade)); carregar(); }
-    catch (e: any) { setResMsgG({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.excluirReserva(id);
+      setResListaG(await api.listarReservas(cidade));
+      carregar();
+    } catch (e: any) {
+      setResMsgG({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Menu de cidades: incluir / editar / excluir (conforme tabela cidades)
@@ -683,51 +1104,116 @@ export default function App() {
     }
     try {
       if (cidEditando) {
-        await api.editarCidade(cidEditando, { nome: cidForm.nome, uf: cidForm.uf, fuso: cidForm.fuso });
+        await api.editarCidade(cidEditando, {
+          nome: cidForm.nome,
+          uf: cidForm.uf,
+          fuso: cidForm.fuso,
+        });
         setCidMsg({ tipo: 'ok', texto: 'Cidade atualizada.' });
       } else {
         const { status, body } = await api.criarCidade(cidForm);
-        if (status !== 201) { setCidMsg({ tipo: 'erro', texto: body?.erro || `Falha (HTTP ${status}).` }); return; }
+        if (status !== 201) {
+          setCidMsg({ tipo: 'erro', texto: body?.erro || `Falha (HTTP ${status}).` });
+          return;
+        }
         setCidMsg({ tipo: 'ok', texto: `Cidade ${cidForm.nome} cadastrada.` });
       }
-      setCidForm({ id: '', nome: '', uf: '', fuso: 'America/Maceio' }); setCidEditando(null);
+      setCidForm({ id: '', nome: '', uf: '', fuso: 'America/Maceio' });
+      setCidEditando(null);
       carregar();
-    } catch (e: any) { setCidMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setCidMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const excluirCidade = async (id: string) => {
     if (!confirm(`Excluir a cidade "${id}"? (só vazia)`)) return;
-    try { await api.excluirCidade(id); carregar(); }
-    catch (e: any) { setCidMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.excluirCidade(id);
+      carregar();
+    } catch (e: any) {
+      setCidMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Conteúdo compartilhado: Usuários (aba Config + uso interno)
   const conteudoUsuarios = () => (
     <>
       <div className="table-scroll">
-      <table>
-        <thead><tr><th>Login</th><th>Nome</th><th>Perfil</th><th>Cidades</th><th>Recursos</th><th>Ações</th></tr></thead>
-        <tbody>
-          {usersLista.map((u: any) => (
-            <tr key={u.login}>
-              <td><b>{u.login}</b></td><td>{u.nome}</td><td>{u.perfil}</td>
-              <td style={{ fontSize: '.7rem' }}>{u.cidades.length ? u.cidades.join(', ') : 'todas'}</td>
-              <td style={{ fontSize: '.7rem' }}>{u.efetivas.join(', ')}</td>
-              <td className="row-actions">
-                <button onClick={() => { setUserEditando(u.login); setUserForm({ login: u.login, senha: '', perfil: u.perfil, nome: u.nome, cidades: u.cidades, permissoes: u.permissoes }); }}>Editar</button>
-                <button className="danger" onClick={() => excluirUsuario(u.login)}>Excluir</button>
-              </td>
+        <table>
+          <thead>
+            <tr>
+              <th>Login</th>
+              <th>Nome</th>
+              <th>Perfil</th>
+              <th>Cidades</th>
+              <th>Recursos</th>
+              <th>Ações</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {usersLista.map((u: any) => (
+              <tr key={u.login}>
+                <td>
+                  <b>{u.login}</b>
+                </td>
+                <td>{u.nome}</td>
+                <td>{u.perfil}</td>
+                <td style={{ fontSize: '.7rem' }}>
+                  {u.cidades.length ? u.cidades.join(', ') : 'todas'}
+                </td>
+                <td style={{ fontSize: '.7rem' }}>{u.efetivas.join(', ')}</td>
+                <td className="row-actions">
+                  <button
+                    onClick={() => {
+                      setUserEditando(u.login);
+                      setUserForm({
+                        login: u.login,
+                        senha: '',
+                        perfil: u.perfil,
+                        nome: u.nome,
+                        cidades: u.cidades,
+                        permissoes: u.permissoes,
+                      });
+                    }}
+                  >
+                    Editar
+                  </button>
+                  <button className="danger" onClick={() => excluirUsuario(u.login)}>
+                    Excluir
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       <div className="spot-form">
-        <h2 style={{ fontSize: '.85rem' }}>{userEditando ? `EDITAR ${userEditando}` : '＋ NOVO USUÁRIO'}</h2>
+        <h2 style={{ fontSize: '.85rem' }}>
+          {userEditando ? `EDITAR ${userEditando}` : '＋ NOVO USUÁRIO'}
+        </h2>
         <div className="spot-row">
-          <label>Login<input value={userForm.login} disabled={!!userEditando} onChange={(e) => setUserForm({ ...userForm, login: e.target.value })} /></label>
-          <label>{userEditando ? 'Nova senha (vazio mantém)' : 'Senha'}<input type="password" value={userForm.senha} onChange={(e) => setUserForm({ ...userForm, senha: e.target.value })} /></label>
-          <label>Perfil
-            <select value={userForm.perfil} onChange={(e) => setUserForm({ ...userForm, perfil: e.target.value })}>
+          <label>
+            Login
+            <input
+              value={userForm.login}
+              disabled={!!userEditando}
+              onChange={(e) => setUserForm({ ...userForm, login: e.target.value })}
+            />
+          </label>
+          <label>
+            {userEditando ? 'Nova senha (vazio mantém)' : 'Senha'}
+            <input
+              type="password"
+              value={userForm.senha}
+              onChange={(e) => setUserForm({ ...userForm, senha: e.target.value })}
+            />
+          </label>
+          <label>
+            Perfil
+            <select
+              value={userForm.perfil}
+              onChange={(e) => setUserForm({ ...userForm, perfil: e.target.value })}
+            >
               <option value="admin">admin</option>
               <option value="regional">regional</option>
               <option value="operador">operador</option>
@@ -735,29 +1221,72 @@ export default function App() {
             </select>
           </label>
         </div>
-        <label>Nome<input value={userForm.nome} onChange={(e) => setUserForm({ ...userForm, nome: e.target.value })} /></label>
-        <label>Cidades que pode ver (vazio = todas)
+        <label>
+          Nome
+          <input
+            value={userForm.nome}
+            onChange={(e) => setUserForm({ ...userForm, nome: e.target.value })}
+          />
+        </label>
+        <label>
+          Cidades que pode ver (vazio = todas)
           <div className="perm-grid">
             {(cidades.length ? cidades : [{ id: 'aracaju', nome: 'Aracaju' }]).map((c: any) => (
-              <label key={c.id} className="check"><input type="checkbox"
-                checked={userForm.cidades.includes(c.id)}
-                onChange={() => setUserForm({ ...userForm, cidades: alternar(userForm.cidades, c.id) })} />{c.nome}</label>
+              <label key={c.id} className="check">
+                <input
+                  type="checkbox"
+                  checked={userForm.cidades.includes(c.id)}
+                  onChange={() =>
+                    setUserForm({ ...userForm, cidades: alternar(userForm.cidades, c.id) })
+                  }
+                />
+                {c.nome}
+              </label>
             ))}
           </div>
         </label>
-        <label>Recursos extras além do perfil
+        <label>
+          Recursos extras além do perfil
           <div className="perm-grid">
             {recursosLista.map((r) => (
-              <label key={r.id} className="check"><input type="checkbox"
-                checked={userForm.permissoes.includes(r.id)}
-                onChange={() => setUserForm({ ...userForm, permissoes: alternar(userForm.permissoes, r.id) })} />{r.rotulo}</label>
+              <label key={r.id} className="check">
+                <input
+                  type="checkbox"
+                  checked={userForm.permissoes.includes(r.id)}
+                  onChange={() =>
+                    setUserForm({ ...userForm, permissoes: alternar(userForm.permissoes, r.id) })
+                  }
+                />
+                {r.rotulo}
+              </label>
             ))}
           </div>
         </label>
-        {userMsg && <p className={`spot-msg ${userMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{userMsg.texto}</p>}
+        {userMsg && (
+          <p className={`spot-msg ${userMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{userMsg.texto}</p>
+        )}
         <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-          <button onClick={salvarUsuario}>{userEditando ? 'Salvar alterações' : 'Criar usuário'}</button>
-          {userEditando && <button className="ghost" onClick={() => { setUserEditando(null); setUserForm({ login: '', senha: '', perfil: 'visualizador', nome: '', cidades: [], permissoes: [] }); }}>Cancelar edição</button>}
+          <button onClick={salvarUsuario}>
+            {userEditando ? 'Salvar alterações' : 'Criar usuário'}
+          </button>
+          {userEditando && (
+            <button
+              className="ghost"
+              onClick={() => {
+                setUserEditando(null);
+                setUserForm({
+                  login: '',
+                  senha: '',
+                  perfil: 'visualizador',
+                  nome: '',
+                  cidades: [],
+                  permissoes: [],
+                });
+              }}
+            >
+              Cancelar edição
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -767,34 +1296,112 @@ export default function App() {
   const conteudoCidades = () => (
     <>
       <div className="table-scroll">
-      <table>
-        <thead><tr><th>ID</th><th>Nome</th><th>UF</th><th>Fuso</th><th>Ações</th></tr></thead>
-        <tbody>
-          {(cidades.length ? cidades : []).map((c: any) => (
-            <tr key={c.id}>
-              <td><b>{c.id}</b></td><td>{c.nome}</td><td>{c.uf}</td><td style={{ fontSize: '.7rem' }}>{c.fuso}</td>
-              <td className="row-actions">
-                <button onClick={() => { setCidEditando(c.id); setCidForm({ id: c.id, nome: c.nome, uf: c.uf || '', fuso: c.fuso || 'America/Maceio' }); }}>Editar</button>
-                <button className="danger" onClick={() => excluirCidade(c.id)}>Excluir</button>
-              </td>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nome</th>
+              <th>UF</th>
+              <th>Fuso</th>
+              <th>Ações</th>
             </tr>
-          ))}
-          {cidades.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>Nenhuma cidade cadastrada.</td></tr>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(cidades.length ? cidades : []).map((c: any) => (
+              <tr key={c.id}>
+                <td>
+                  <b>{c.id}</b>
+                </td>
+                <td>{c.nome}</td>
+                <td>{c.uf}</td>
+                <td style={{ fontSize: '.7rem' }}>{c.fuso}</td>
+                <td className="row-actions">
+                  <button
+                    onClick={() => {
+                      setCidEditando(c.id);
+                      setCidForm({
+                        id: c.id,
+                        nome: c.nome,
+                        uf: c.uf || '',
+                        fuso: c.fuso || 'America/Maceio',
+                      });
+                    }}
+                  >
+                    Editar
+                  </button>
+                  <button className="danger" onClick={() => excluirCidade(c.id)}>
+                    Excluir
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {cidades.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ color: 'var(--muted)' }}>
+                  Nenhuma cidade cadastrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
       <div className="spot-form">
-        <h2 style={{ fontSize: '.85rem' }}>{cidEditando ? `EDITAR ${cidEditando}` : '＋ NOVA CIDADE'}</h2>
+        <h2 style={{ fontSize: '.85rem' }}>
+          {cidEditando ? `EDITAR ${cidEditando}` : '＋ NOVA CIDADE'}
+        </h2>
         <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }}>
-          <label>ID<input placeholder="recife" value={cidForm.id} disabled={!!cidEditando} onChange={(e) => setCidForm({ ...cidForm, id: e.target.value.toLowerCase().trim() })} /></label>
-          <label>Nome<input placeholder="Recife" value={cidForm.nome} onChange={(e) => setCidForm({ ...cidForm, nome: e.target.value })} /></label>
-          <label>UF<input placeholder="PE" value={cidForm.uf} onChange={(e) => setCidForm({ ...cidForm, uf: e.target.value.toUpperCase() })} /></label>
-          <label>Fuso<input placeholder="America/Recife" value={cidForm.fuso} onChange={(e) => setCidForm({ ...cidForm, fuso: e.target.value })} /></label>
+          <label>
+            ID
+            <input
+              placeholder="recife"
+              value={cidForm.id}
+              disabled={!!cidEditando}
+              onChange={(e) => setCidForm({ ...cidForm, id: e.target.value.toLowerCase().trim() })}
+            />
+          </label>
+          <label>
+            Nome
+            <input
+              placeholder="Recife"
+              value={cidForm.nome}
+              onChange={(e) => setCidForm({ ...cidForm, nome: e.target.value })}
+            />
+          </label>
+          <label>
+            UF
+            <input
+              placeholder="PE"
+              value={cidForm.uf}
+              onChange={(e) => setCidForm({ ...cidForm, uf: e.target.value.toUpperCase() })}
+            />
+          </label>
+          <label>
+            Fuso
+            <input
+              placeholder="America/Recife"
+              value={cidForm.fuso}
+              onChange={(e) => setCidForm({ ...cidForm, fuso: e.target.value })}
+            />
+          </label>
         </div>
-        {cidMsg && <p className={`spot-msg ${cidMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{cidMsg.texto}</p>}
+        {cidMsg && (
+          <p className={`spot-msg ${cidMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{cidMsg.texto}</p>
+        )}
         <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-          <button onClick={salvarCidade}>{cidEditando ? 'Salvar alterações' : 'Cadastrar cidade'}</button>
-          {cidEditando && <button className="ghost" onClick={() => { setCidEditando(null); setCidForm({ id: '', nome: '', uf: '', fuso: 'America/Maceio' }); }}>Cancelar edição</button>}
+          <button onClick={salvarCidade}>
+            {cidEditando ? 'Salvar alterações' : 'Cadastrar cidade'}
+          </button>
+          {cidEditando && (
+            <button
+              className="ghost"
+              onClick={() => {
+                setCidEditando(null);
+                setCidForm({ id: '', nome: '', uf: '', fuso: 'America/Maceio' });
+              }}
+            >
+              Cancelar edição
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -806,8 +1413,13 @@ export default function App() {
     try {
       const r = await salvarTema(restaurar ? {} : tema.vars, restaurar);
       setTema((t) => ({ ...t, vars: r.vars }));
-      setTemaMsg({ tipo: 'ok', texto: restaurar ? 'Paleta padrão restaurada.' : 'Paleta salva e aplicada.' });
-    } catch (e: any) { setTemaMsg({ tipo: 'erro', texto: e.message }); }
+      setTemaMsg({
+        tipo: 'ok',
+        texto: restaurar ? 'Paleta padrão restaurada.' : 'Paleta salva e aplicada.',
+      });
+    } catch (e: any) {
+      setTemaMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   // Menu de LEDs: incluir / editar / excluir (com total de espaços individual)
@@ -825,39 +1437,93 @@ export default function App() {
     try {
       if (ledEditando) {
         await api.editarLed(ledEditando, {
-          endereco: ledForm.endereco, cidade_id: ledForm.cidade_id, espacos_total: esp,
+          endereco: ledForm.endereco,
+          cidade_id: ledForm.cidade_id,
+          espacos_total: esp,
           ...(ledForm.codigo !== ledEditando ? { novo_codigo: ledForm.codigo } : {}),
         });
         setLedMsg({ tipo: 'ok', texto: 'LED atualizado.' });
       } else {
         const { status, body } = await api.criarLed({ ...ledForm, espacos_total: esp });
-        if (status !== 201) { setLedMsg({ tipo: 'erro', texto: body?.erro || `Falha (HTTP ${status}).` }); return; }
-        setLedMsg({ tipo: 'ok', texto: `LED ${ledForm.codigo} cadastrado (${esp ?? 'padrão'} espaços).` });
+        if (status !== 201) {
+          setLedMsg({ tipo: 'erro', texto: body?.erro || `Falha (HTTP ${status}).` });
+          return;
+        }
+        setLedMsg({
+          tipo: 'ok',
+          texto: `LED ${ledForm.codigo} cadastrado (${esp ?? 'padrão'} espaços).`,
+        });
       }
-      setLedForm({ codigo: '', endereco: '', cidade_id: ledForm.cidade_id, espacos: '' }); setLedEditando(null);
+      setLedForm({ codigo: '', endereco: '', cidade_id: ledForm.cidade_id, espacos: '' });
+      setLedEditando(null);
       carregar();
-    } catch (e: any) { setLedMsg({ tipo: 'erro', texto: e.message }); }
+    } catch (e: any) {
+      setLedMsg({ tipo: 'erro', texto: e.message });
+    }
   };
   const excluirLed = async (codigo: string) => {
     if (!confirm(`Excluir o LED ${codigo}? (só vazio)`)) return;
-    try { await api.excluirLed(codigo); carregar(); }
-    catch (e: any) { setLedMsg({ tipo: 'erro', texto: e.message }); }
+    try {
+      await api.excluirLed(codigo);
+      carregar();
+    } catch (e: any) {
+      setLedMsg({ tipo: 'erro', texto: e.message });
+    }
   };
 
   if (!token) {
     return (
       <div className="login-wrap">
         <div className="card login-card">
-          <div className="brand" style={{ marginBottom: 12 }}>{logo ? <img className="brand-logo" src={logo} alt="Marca Controle de LED" /> : <div className="icon" aria-hidden="true">📺</div>}<div><h1>CONTROLE DE LED</h1><span>PAINÉIS DE VEICULAÇÃO</span></div></div>
+          <div className="brand" style={{ marginBottom: 12 }}>
+            {logo ? (
+              <img className="brand-logo" src={logo} alt="Marca Controle de LED" />
+            ) : (
+              <div className="icon" aria-hidden="true">
+                📺
+              </div>
+            )}
+            <div>
+              <h1>CONTROLE DE LED</h1>
+              <span>PAINÉIS DE VEICULAÇÃO</span>
+            </div>
+          </div>
           <h2>Login</h2>
           <p className="sub">Fluxo §5 · perfis §9.2 (admin / regional / operador / visualizador)</p>
           <label htmlFor="login-input">Login</label>
-          <input id="login-input" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="login" aria-describedby={loginErro ? 'login-erro' : undefined} />
+          <input
+            id="login-input"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="login"
+            aria-describedby={loginErro ? 'login-erro' : undefined}
+          />
           <label htmlFor="senha-input">Senha</label>
-          <input id="senha-input" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="senha" aria-describedby={loginErro ? 'login-erro' : undefined} />
-          {loginErro && <p id="login-erro" className="sub" style={{ color: 'var(--red)' }} role="alert" aria-live="polite">{loginErro}</p>}
-          <button onClick={fazerLogin} disabled={logando}>{logando ? 'Entrando…' : 'Entrar'}</button>
-          <p className="sub" style={{ marginTop: 10 }}>Demo: admin/admin123 · viewer/view123</p>
+          <input
+            id="senha-input"
+            type="password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            placeholder="senha"
+            aria-describedby={loginErro ? 'login-erro' : undefined}
+          />
+          {loginErro && (
+            <p
+              id="login-erro"
+              className="sub"
+              style={{ color: 'var(--red)' }}
+              role="alert"
+              aria-live="polite"
+            >
+              {loginErro}
+            </p>
+          )}
+          <button onClick={fazerLogin} disabled={logando}>
+            {logando ? 'Entrando…' : 'Entrar'}
+          </button>
+          <p className="sub" style={{ marginTop: 10 }}>
+            Demo: admin/admin123 · viewer/view123
+          </p>
         </div>
       </div>
     );
@@ -869,59 +1535,163 @@ export default function App() {
     <>
       <div className="toasts" role="alert">
         {can('notificacoes') && visiveis.length > 1 && (
-          <button className="toasts-close" onClick={() => setDismissed((xs) => [...xs, ...visiveis.map((n) => n.id)])}>
+          <button
+            className="toasts-close"
+            onClick={() => setDismissed((xs) => [...xs, ...visiveis.map((n) => n.id)])}
+          >
             ✕ fechar todas ({visiveis.length})
           </button>
         )}
-        {can('notificacoes') && visiveis.slice(0, 4).map((n) => (
-          <ToastItem key={n.id} n={n}
-            onView={() => verCampanha(n)}
-            onClose={() => setDismissed((xs) => [...xs, n.id])} />
-        ))}
+        {can('notificacoes') &&
+          visiveis
+            .slice(0, 4)
+            .map((n) => (
+              <ToastItem
+                key={n.id}
+                n={n}
+                onView={() => verCampanha(n)}
+                onClose={() => setDismissed((xs) => [...xs, n.id])}
+              />
+            ))}
       </div>
 
       <div className="wrap">
         <div className="topbar">
-          <div className="brand">{logo ? <img className="brand-logo" src={logo} alt="logo" /> : <div className="icon">📺</div>}<div><h1>CONTROLE DE LED</h1><span>PAINÉIS DE VEICULAÇÃO</span></div></div>
+          <div className="brand">
+            {logo ? (
+              <img className="brand-logo" src={logo} alt="logo" />
+            ) : (
+              <div className="icon">📺</div>
+            )}
+            <div>
+              <h1>CONTROLE DE LED</h1>
+              <span>PAINÉIS DE VEICULAÇÃO</span>
+            </div>
+          </div>
           <span className="live">● LIVE{online ? '' : ' · OFFLINE'}</span>
           <div className="kpis">
-            <div className="kpi"><label>OCUPAÇÃO MÉDIA</label><b>{dash.kpis.ocupacao_media}%</b></div>
-            <div className="kpi"><label>LEDS ATIVOS</label><b>{dash.kpis.leds_ativos}</b></div>
-            <div className="kpi"><label>A VENCER (7D)</label><b style={{ color: 'var(--orange)' }}>{dash.kpis.a_vencer_7d}</b></div>
-            <div className="kpi"><label>DISPONÍVEIS</label><b style={{ color: 'var(--teal)' }}>{dash.kpis.livres}<small>/{dash.kpis.espacos_total} espaços</small></b></div>
+            <div className="kpi">
+              <label>OCUPAÇÃO MÉDIA</label>
+              <b>{dash.kpis.ocupacao_media}%</b>
+            </div>
+            <div className="kpi">
+              <label>LEDS ATIVOS</label>
+              <b>{dash.kpis.leds_ativos}</b>
+            </div>
+            <div className="kpi">
+              <label>A VENCER (7D)</label>
+              <b style={{ color: 'var(--orange)' }}>{dash.kpis.a_vencer_7d}</b>
+            </div>
+            <div className="kpi">
+              <label>DISPONÍVEIS</label>
+              <b style={{ color: 'var(--teal)' }}>
+                {dash.kpis.livres}
+                <small>/{dash.kpis.espacos_total} espaços</small>
+              </b>
+            </div>
           </div>
-          <div className="select">🏙️ Cidade:{' '}
+          <div className="select">
+            🏙️ Cidade:{' '}
             <select value={cidade} onChange={(e) => trocarCidade(e.target.value)}>
               <option value="">Todas ({cidadesOpts.length})</option>
               {cidadesOpts.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
               ))}
-            </select> ▾
+            </select>{' '}
+            ▾
           </div>
           <div className="pill">📅 {dash.periodo}</div>
-          {can('leds') && <button className="pill" style={{ cursor: 'pointer' }} onClick={() => { setLedsMenu(true); setLedMsg(null); }}><span style={{ marginRight: 6 }}>📺</span>Painéis de LED</button>}
-          {can('reservas') && <button className="pill" style={{ cursor: 'pointer' }} onClick={abrirReservasMenu}><span style={{ marginRight: 6 }}>🗓️</span>Reservas</button>}
-          {tela === 'painel' && temConfig && <button className="pill" style={{ cursor: 'pointer' }} onClick={() => setTela('config')}><span style={{ marginRight: 6 }}>⚙️</span>Configuração</button>}
-          {tela === 'config' && <button className="pill" style={{ cursor: 'pointer' }} onClick={() => setTela('painel')}><span style={{ marginRight: 6 }}>←</span>Voltar</button>}
-          {perfil && <div className="pill" title="Perfil do usuário (spec §9.2)"><span style={{ marginRight: 6 }}>👤</span>{perfil}{isAdmin ? ' · admin' : ''}</div>}
+          {can('leds') && (
+            <button
+              className="pill"
+              style={{ cursor: 'pointer' }}
+              onClick={() => {
+                setLedsMenu(true);
+                setLedMsg(null);
+              }}
+            >
+              <span style={{ marginRight: 6 }}>📺</span>Painéis de LED
+            </button>
+          )}
+          {can('reservas') && (
+            <button className="pill" style={{ cursor: 'pointer' }} onClick={abrirReservasMenu}>
+              <span style={{ marginRight: 6 }}>🗓️</span>Reservas
+            </button>
+          )}
+          {tela === 'painel' && temConfig && (
+            <button
+              className="pill"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setTela('config')}
+            >
+              <span style={{ marginRight: 6 }}>⚙️</span>Configuração
+            </button>
+          )}
+          {tela === 'config' && (
+            <button
+              className="pill"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setTela('painel')}
+            >
+              <span style={{ marginRight: 6 }}>←</span>Voltar
+            </button>
+          )}
+          {perfil && (
+            <div className="pill" title="Perfil do usuário (spec §9.2)">
+              <span style={{ marginRight: 6 }}>👤</span>
+              {perfil}
+              {isAdmin ? ' · admin' : ''}
+            </div>
+          )}
           <div style={{ position: 'relative' }}>
             {can('notificacoes') && (
-              <button className="bell" onClick={() => setSino((v) => !v)} aria-expanded={sino} aria-haspopup="true" aria-controls="notificacoes-panel"><span style={{ marginRight: 6 }} aria-hidden="true">🔔</span><span>Notificações</span>{pendentes.length > 0 && <span className="count">{pendentes.length}</span>}</button>
+              <button
+                className="bell"
+                onClick={() => setSino((v) => !v)}
+                aria-expanded={sino}
+                aria-haspopup="true"
+                aria-controls="notificacoes-panel"
+              >
+                <span style={{ marginRight: 6 }} aria-hidden="true">
+                  🔔
+                </span>
+                <span>Notificações</span>
+                {pendentes.length > 0 && <span className="count">{pendentes.length}</span>}
+              </button>
             )}
             {sino && can('notificacoes') && (
-              <div className="notif-panel" id="notificacoes-panel" role="menu" aria-label="Central de notificações">
+              <div
+                className="notif-panel"
+                id="notificacoes-panel"
+                role="menu"
+                aria-label="Central de notificações"
+              >
                 <h3>Central de notificações</h3>
                 {notifs.length === 0 && <div className="item">Nenhuma notificação.</div>}
                 {notifs.slice(0, 20).map((n) => (
-                  <div key={n.id} className="item" style={n.lida ? { opacity: .55 } : undefined}>
-                    <b>{n.titulo}</b><br />{n.corpo}
+                  <div key={n.id} className="item" style={n.lida ? { opacity: 0.55 } : undefined}>
+                    <b>{n.titulo}</b>
+                    <br />
+                    {n.corpo}
                     {!n.lida && (
                       <div className="actions">
                         <button onClick={() => verCampanha(n)}>Ver campanha</button>
-                        <button onClick={() => {
-                          if (online && n.id > 0) api.marcarLida(n.id).then(carregar).catch(() => {});
-                          setNotifs((xs) => xs.map((x) => (x.id === n.id ? { ...x, lida: true } : x)));
-                        }}>Marcar como lida</button>
+                        <button
+                          onClick={() => {
+                            if (online && n.id > 0)
+                              api
+                                .marcarLida(n.id)
+                                .then(carregar)
+                                .catch(() => {});
+                            setNotifs((xs) =>
+                              xs.map((x) => (x.id === n.id ? { ...x, lida: true } : x)),
+                            );
+                          }}
+                        >
+                          Marcar como lida
+                        </button>
                       </div>
                     )}
                   </div>
@@ -929,496 +1699,1109 @@ export default function App() {
               </div>
             )}
           </div>
-          <button className="btn-sair" onClick={sair}>Sair</button>
+          <button className="btn-sair" onClick={sair}>
+            Sair
+          </button>
         </div>
-        <div className="breadcrumb">Todas as cidades <span>→</span> <b>{cidadeNome(cidade)}</b>{ledSel && (<><span>→</span> <b>{ledSel}</b></>)}</div>
+        <div className="breadcrumb">
+          Todas as cidades <span>→</span> <b>{cidadeNome(cidade)}</b>
+          {ledSel && (
+            <>
+              <span>→</span> <b>{ledSel}</b>
+            </>
+          )}
+        </div>
 
         {tela === 'painel' && (
-        <>
-        <div className="grid">
-          <div className="card">
-            <h2>OCUPAÇÃO POR LED</h2>
-            <p className="sub">Linha do tempo de campanhas veiculando / reservadas por painel — {cidadeNome(cidade)}.</p>
-            {dash.gantt_por_led.map((l) => {
-              const usados = l.espacos_usados ?? l.campanhas.length;
-              const total = l.espacos_total ?? 8;
-              const pct = Math.min(100, Math.round((usados / Math.max(1, total)) * 100));
-              return (
-                <div key={l.codigo} className={`ledrow ${ledSel === l.codigo ? 'sel' : ''}`}
-                  onClick={() => setLedSel((s) => (s === l.codigo ? null : l.codigo))}
-                  title={l.campanhas.map((c: any) => `${c.anunciante} ${br(c.inicio)}→${br(c.fim)}`).join(' · ')}>
-                  <div className="ledname">{l.codigo}<small>{l.endereco}</small>
-                    <span className="slots" title={`${usados} de ${total} espaços de cliente ocupados`}>
-                      <span className="slots-bar"><span style={{ width: `${pct}%` }} /></span>
-                      {usados}/{total}
-                    </span>
-                  </div>
-                  <div className="track">
-                    {ganttBlocos(l.campanhas).map((b, i) => (
-                      <div key={i} className={`seg ${b.cls}`} style={{ width: `${b.w}%` }} title={b.title}>{b.label}</div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-            {ledSel && podeEditar && <button className="pill" style={{ cursor: 'pointer', marginTop: 8 }} onClick={() => abrirNovaCampanha(ledSel)}>+ Nova campanha em {ledSel}</button>}
-          </div>
-
-          <div className="card">
-            <h2>DISTRIBUIÇÃO POR STATUS</h2>
-            <p className="sub">Ocupação geral da rede no período.</p>
-            <div className="toolbar" style={{ marginBottom: 4 }}>
-              {([['rosca', 'Rosca'], ['pizza', 'Pizza'], ['barras', 'Barras']] as const).map(([id, lb]) => (
-                <button key={id} className={tipoDist === id ? undefined : 'ghost'} onClick={() => setTipoDist(id)}>{lb}</button>
-              ))}
-            </div>
-            {tipoDist !== 'barras' ? (
-            <div className="donutwrap">
-              <ResponsiveContainer width={170} height={170}>
-                <PieChart>
-                  <Pie data={dash.distribuicao} dataKey="value" nameKey="name"
-                    innerRadius={tipoDist === 'rosca' ? 52 : 0} outerRadius={72} paddingAngle={2} strokeWidth={0}>
-                    {dash.distribuicao.map((d) => <Cell key={d.name} fill={d.color} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="legend">
-                {dash.distribuicao.map((d) => <div key={d.name}><span className="dot" style={{ background: d.color }} />{d.name}<b>{d.value}%</b></div>)}
-              </div>
-            </div>
-            ) : (
-            <ResponsiveContainer width="100%" height={170}>
-              <BarChart data={dash.distribuicao} layout="vertical">
-                <CartesianGrid stroke={tema.vars.border || "#232d4a"} strokeDasharray="3 3" />
-                <XAxis type="number" stroke={tema.vars.muted || "#8b93ab"} fontSize={11} domain={[0, 100]} />
-                <YAxis type="category" dataKey="name" stroke={tema.vars.muted || "#8b93ab"} fontSize={11} width={80} />
-                <Tooltip contentStyle={{ background: tema.vars.panel2 || "#0f1730", border: `1px solid ${tema.vars.border || "#232d4a"}` }} />
-                <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                  {dash.distribuicao.map((d) => <Cell key={d.name} fill={d.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        <div className="grid2" style={{ marginBottom: 18 }}>
-          <div className="card">
-            <h2>OCUPAÇÃO POR CIDADE</h2>
-            <p className="sub">Ranking de ocupação (%). Clique para filtrar.</p>
-            <div className="bars">
-              {dash.ocupacao_por_cidade.map((b) => (
-                <div key={b.cidade} className="bar" onClick={() => trocarCidade(b.id || '')}>
-                  <div className={`val ${b.valor === 0 ? 'empty' : ''}`} style={{ height: `${Math.max(b.valor, 2)}%` }}>
-                    <span style={b.valor === 0 ? { color: 'var(--muted)' } : undefined}>{b.valor === 0 ? '—' : `${b.valor}%`}</span>
-                  </div>
-                  <label>{b.cidade}</label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>CAMPANHAS — A VENCER ({dash.a_vencer_lista.length})</h2>
-            <p className="sub">{dash.a_vencer_lista.length} campanhas em {new Set(dash.a_vencer_lista.map((a) => a.led)).size} LEDs · fim − hoje ≤ 7d (mesma base do topo).</p>
-            <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
-            <table>
-              <thead><tr><th>Anunciante</th><th>LED</th><th>Status</th></tr></thead>
-              <tbody>
-                {dash.a_vencer_lista.map((a, i) => (
-                  <tr key={i}><td>{a.anunciante}</td><td>{a.led}</td>
-                    <td><span className="status-dot" style={{ background: 'var(--orange)' }} />{a.status}
-                      {a.dias !== undefined && <small style={{ color: 'var(--muted)' }}> · {a.dias === 0 ? 'hoje' : `${a.dias}d`}</small>}</td></tr>
-                ))}
-                {dash.a_vencer_lista.length === 0 && (
-                  <tr><td colSpan={3} style={{ color: 'var(--muted)' }}>Nenhuma vencendo no período.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-            <h2 style={{ marginTop: 16 }}>CAMPANHAS — A INICIAR ({(dash.a_iniciar_lista || []).length})</h2>
-            <p className="sub">Início próximo · início − hoje ≤ 7d.</p>
-            <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
-            <table>
-              <thead><tr><th>Anunciante</th><th>LED</th><th>Status</th></tr></thead>
-              <tbody>
-                {(dash.a_iniciar_lista || []).map((a, i) => (
-                  <tr key={i}><td>{a.anunciante}</td><td>{a.led}</td>
-                    <td><span className="status-dot" style={{ background: 'var(--blue)' }} />{a.status}
-                      {a.dias !== undefined && <small style={{ color: 'var(--muted)' }}> · em {a.dias}d</small>}</td></tr>
-                ))}
-                {(dash.a_iniciar_lista || []).length === 0 && (
-                  <tr><td colSpan={3} style={{ color: 'var(--muted)' }}>Nenhuma iniciando no período.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="card" ref={painelRef} style={{ marginBottom: 18, scrollMarginTop: 12 }}>
-          <div className="tabs">
-            <div className={`tab ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</div>
-            {(can('planilha') || !online) && <div className={`tab ${tab === 'planilha' ? 'active' : ''}`} onClick={() => setTab('planilha')}>Visualizar como planilha</div>}
-            {(can('relatorios') || !online) && <div className={`tab ${tab === 'relatorios' ? 'active' : ''}`} onClick={() => setTab('relatorios')}>Relatórios</div>}
-            {(can('graficos') || !online) && <div className={`tab ${tab === 'graficos' ? 'active' : ''}`} onClick={() => setTab('graficos')}>Gráficos</div>}
-            {can('reservas') && <div className={`tab ${tab === 'reservas' ? 'active' : ''}`} onClick={() => setTab('reservas')}>Reservas</div>}
-          </div>
-
-          {tab === 'planilha' && (can('planilha') || !online) && (
-            <>
-              <div className="toolbar">
-                <input placeholder="🔍 Buscar…" value={q} onChange={(e) => { setQ(e.target.value); setSelecionadas([]); }} />
-                <select value={stFilter} onChange={(e) => { setStFilter(e.target.value); setSelecionadas([]); }}>
-                  <option value="">Todos os status</option>
-                  {Object.keys(STATUS_ROTULO).map((s) => <option key={s} value={s}>{STATUS_ROTULO[s]}</option>)}
-                </select>
-                {podeEditar && <button onClick={() => abrirNovaCampanha()}>＋ Nova campanha</button>}
-                {podeEditar && selecionadas.length > 0 && (
-                  <button className="danger" onClick={excluirSelecionadas}>🗑 Excluir {selecionadas.length} selecionada(s)</button>
-                )}
-                {can('exportar') && <button onClick={() => api.exportar('xlsx', cidade, q, stFilter)}>⬇ .xlsx</button>}
-                {can('exportar') && <button onClick={() => api.exportar('csv', cidade, q, stFilter)}>⬇ .csv</button>}
-                <button className="ghost" onClick={() => window.print()}>🖨 PDF</button>
-              </div>
-              {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
-              <div style={{ overflowX: 'auto' }}>
-                <table>
-                  <thead><tr>
-                    {podeEditar && (
-                      <th>
-                        <input type="checkbox" title="Selecionar visíveis"
-                          checked={linhas.length > 0 && linhas.every((r) => !r.id || selecionadas.includes(r.id))}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelecionadas((xs) => [...new Set([...xs, ...linhas.map((r) => r.id).filter(Boolean) as string[]])]);
-                            else setSelecionadas((xs) => xs.filter((id) => !linhas.some((r) => r.id === id)));
-                          }} />
-                      </th>
-                    )}
-                    {[['cidade', 'Cidade'], ['led', 'LED'], ['anunciante', 'Anunciante'], ['inicio', 'Início'], ['fim', 'Fim'], ['status', 'Status']].map(([k, lb]) => (
-                      <th key={k} onClick={() => { if (k === sortK) setSortD((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setSortD(1); } }}>
-                        {lb}{sortK === k ? (sortD === 1 ? ' ▲' : ' ▼') : ''}
-                      </th>
-                    ))}
-                    {podeEditar && <th>Ações</th>}
-                  </tr></thead>
-                  <tbody>
-                    {online ? (
-                      linhas.length ? linhas.map((r, i) => (
-                        <tr key={r.id || i} className={r.id && r.id === destaque ? 'destaque' : undefined}>
-                          {podeEditar && (
-                            <td><input type="checkbox" checked={!!r.id && selecionadas.includes(r.id)} disabled={!r.id}
-                              onChange={() => r.id && alternarSelecao(r.id)} /></td>
-                          )}
-                          <td>{r.cidade}</td><td>{r.led}</td>
-                          <td>
-                            {editInline && editInline.id === r.id && editInline.campo === 'anunciante'
-                              ? (<div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                  <input value={editInline.valor} onChange={(e) => setEditInline({ ...editInline!, valor: e.target.value })} />
-                                  <button onClick={salvarEditInline} style={{ padding: '2px 8px', fontSize: '.7rem' }}>Salvar</button>
-                                  <button onClick={cancelarEditInline} style={{ padding: '2px 8px', fontSize: '.7rem' }}>Cancelar</button>
-                                </div>)
-                              : (<input defaultValue={r.anunciante} onClick={() => iniciarEditInline(r, 'anunciante')} />)}
-                          </td>
-                          <td>{br(r.inicio)}</td><td>{br(r.fim)}</td>
-                          <td><span className="status-dot" style={{ background: corStatus(r.status) }} />{STATUS_ROTULO[r.status] || r.status}
-                            {r.status === 'a_vencer' && r.fim !== '—' && (() => {
-                              const d = diasAte(r.fim);
-                              const txt = d > 0 ? ` · ${d}d` : ' · encerra hoje';
-                              return <small style={{ color: 'var(--muted)' }}>{txt}</small>;
-                            })()}
-                          </td>
-                          {podeEditar && (
-                            <td className="row-actions">
-                              <button onClick={() => abrirEditarCampanha(r)}>Editar</button>
-                              <button onClick={() => abrirReservas(r)}>Reservas</button>
-                              <button className="danger" onClick={() => excluirCampanha(r)}>Excluir</button>
-                            </td>
-                          )}
-                        </tr>
-                      )) : (
-                        <tr><td colSpan={podeEditar ? 8 : 6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
-                          Nenhuma campanha para os filtros atuais.
-                        </td></tr>
-                      )
-                    ) : (
-                      <tr><td colSpan={podeEditar ? 8 : 6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
-                        Sem dados - API offline. Ligue o back-end para carregar.
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {tab === 'dashboard' && (
-            <>
-              <p className="sub">
-                {online
-                  ? `${linhas.length} campanha(s) no período · ${dash.periodo}`
-                  : `Demonstração offline · ${dash.periodo}`}
-              </p>
-              <div style={{ overflowX: 'auto', maxHeight: 440, overflowY: 'auto' }}>
-              <table>
-              <thead><tr><th>Cidade</th><th>LED</th><th>Anunciante</th><th>Início</th><th>Fim</th><th>Status</th></tr></thead>
-              <tbody>
-                {linhas.map((r, i) => (
-                  <tr key={r.id || i}>
-                    <td>{r.cidade}</td><td>{r.led}</td>
-                    <td style={r.status === 'livre' ? { color: 'var(--muted)' } : undefined}>{r.anunciante}</td>
-                    <td>{br(r.inicio)}</td><td>{br(r.fim)}</td>
-                    <td><span className="status-dot" style={{ background: corStatus(r.status) }} />{STATUS_ROTULO[r.status] || r.status}</td>
-                  </tr>
-                ))}
-                {linhas.length === 0 && (
-                  <tr><td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
-                    {online ? 'Nenhuma campanha para os filtros atuais.' : 'Sem dados - API offline. Ligue o back-end para carregar.'}
-                  </td></tr>
-                )}
-                {online && linhas.length === 0 && (
-                  <tr><td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
-                    Nenhuma campanha para os filtros atuais.
-                  </td></tr>
-                )}
-              </tbody>
-              </table>
-              </div>
-            </>
-          )}
-
-          {tab === 'relatorios' && (can('relatorios') || !online) && (
-            <>
-              <div className="toolbar">
-                <select value={relDim} onChange={(e) => setRelDim(e.target.value as any)}>
-                  <option value="led">Por LED</option>
-                  <option value="cidade">Por cidade</option>
-                  <option value="cliente">Por cliente</option>
-                </select>
-                <select value={relCidade} onChange={(e) => setRelCidade(e.target.value)}>
-                  <option value="">Todas as cidades</option>
-                  {cidades.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
-                <select value={relLed} onChange={(e) => setRelLed(e.target.value)}>
-                  <option value="">Todos os LEDs</option>
-                  {ledsLista.map((l: any) => <option key={l.codigo} value={l.codigo}>{l.codigo}</option>)}
-                </select>
-                <input placeholder="Cliente" value={relAnu} onChange={(e) => setRelAnu(e.target.value)} />
-                <input type="date" value={relDe} onChange={(e) => setRelDe(e.target.value)} />
-                <input type="date" value={relAte} onChange={(e) => setRelAte(e.target.value)} />
-                <button onClick={gerarPdf}>Gerar PDF ({relFiltradas.length})</button>
-              </div>
-              <div className="toolbar">
-                {Object.keys(STATUS_ROTULO).filter((s) => s !== 'livre').map((s) => (
-                  <label key={s} className="check"><input type="checkbox"
-                    checked={relStatus.includes(s)}
-                    onChange={() => setRelStatus((xs) => xs.includes(s) ? xs.filter((x) => x !== s) : [...xs, s])} />{STATUS_ROTULO[s]}</label>
-                ))}
-              </div>
-              {relMsg && <p className={`spot-msg ${relMsg.tipo}`}>{relMsg.texto}</p>}
-              <div style={{ overflowX: 'auto', maxHeight: 380, overflowY: 'auto' }}>
-                {relGrupos.map(([g, itens]) => (
-                  <div key={g}>
-                    <h2 style={{ fontSize: '.85rem', marginTop: 12 }}>{g} ({itens.length})</h2>
-                    <table>
-                      <thead><tr><th>Cidade</th><th>LED</th><th>Anunciante</th><th>Início</th><th>Fim</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {itens.map((r, i) => (
-                          <tr key={r.id || i}>
-                            <td>{r.cidade}</td><td>{r.led}</td><td>{r.anunciante}</td>
-                            <td>{br(r.inicio)}</td><td>{br(r.fim)}</td>
-                            <td><span className="status-dot" style={{ background: corStatus(r.status) }} />{STATUS_ROTULO[r.status] || r.status}</td>
-                          </tr>
+          <>
+            <div className="grid">
+              <div className="card">
+                <h2>OCUPAÇÃO POR LED</h2>
+                <p className="sub">
+                  Linha do tempo de campanhas veiculando / reservadas por painel —{' '}
+                  {cidadeNome(cidade)}.
+                </p>
+                {dash.gantt_por_led.map((l) => {
+                  const usados = l.espacos_usados ?? l.campanhas.length;
+                  const total = l.espacos_total ?? 8;
+                  const pct = Math.min(100, Math.round((usados / Math.max(1, total)) * 100));
+                  return (
+                    <div
+                      key={l.codigo}
+                      className={`ledrow ${ledSel === l.codigo ? 'sel' : ''}`}
+                      onClick={() => setLedSel((s) => (s === l.codigo ? null : l.codigo))}
+                      title={l.campanhas
+                        .map((c: any) => `${c.anunciante} ${br(c.inicio)}→${br(c.fim)}`)
+                        .join(' · ')}
+                    >
+                      <div className="ledname">
+                        {l.codigo}
+                        <small>{l.endereco}</small>
+                        <span
+                          className="slots"
+                          title={`${usados} de ${total} espaços de cliente ocupados`}
+                        >
+                          <span className="slots-bar">
+                            <span style={{ width: `${pct}%` }} />
+                          </span>
+                          {usados}/{total}
+                        </span>
+                      </div>
+                      <div className="track">
+                        {ganttBlocos(l.campanhas).map((b, i) => (
+                          <div
+                            key={i}
+                            className={`seg ${b.cls}`}
+                            style={{ width: `${b.w}%` }}
+                            title={b.title}
+                          >
+                            {b.label}
+                          </div>
                         ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {ledSel && podeEditar && (
+                  <button
+                    className="pill"
+                    style={{ cursor: 'pointer', marginTop: 8 }}
+                    onClick={() => abrirNovaCampanha(ledSel)}
+                  >
+                    + Nova campanha em {ledSel}
+                  </button>
+                )}
+              </div>
+
+              <div className="card">
+                <h2>DISTRIBUIÇÃO POR STATUS</h2>
+                <p className="sub">Ocupação geral da rede no período.</p>
+                <div className="toolbar" style={{ marginBottom: 4 }}>
+                  {(
+                    [
+                      ['rosca', 'Rosca'],
+                      ['pizza', 'Pizza'],
+                      ['barras', 'Barras'],
+                    ] as const
+                  ).map(([id, lb]) => (
+                    <button
+                      key={id}
+                      className={tipoDist === id ? undefined : 'ghost'}
+                      onClick={() => setTipoDist(id)}
+                    >
+                      {lb}
+                    </button>
+                  ))}
+                </div>
+                {tipoDist !== 'barras' ? (
+                  <div className="donutwrap">
+                    <ResponsiveContainer width={170} height={170}>
+                      <PieChart>
+                        <Pie
+                          data={dash.distribuicao}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={tipoDist === 'rosca' ? 52 : 0}
+                          outerRadius={72}
+                          paddingAngle={2}
+                          strokeWidth={0}
+                        >
+                          {dash.distribuicao.map((d) => (
+                            <Cell key={d.name} fill={d.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="legend">
+                      {dash.distribuicao.map((d) => (
+                        <div key={d.name}>
+                          <span className="dot" style={{ background: d.color }} />
+                          {d.name}
+                          <b>{d.value}%</b>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={170}>
+                    <BarChart data={dash.distribuicao} layout="vertical">
+                      <CartesianGrid stroke={tema.vars.border || '#232d4a'} strokeDasharray="3 3" />
+                      <XAxis
+                        type="number"
+                        stroke={tema.vars.muted || '#8b93ab'}
+                        fontSize={11}
+                        domain={[0, 100]}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        stroke={tema.vars.muted || '#8b93ab'}
+                        fontSize={11}
+                        width={80}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: tema.vars.panel2 || '#0f1730',
+                          border: `1px solid ${tema.vars.border || '#232d4a'}`,
+                        }}
+                      />
+                      <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                        {dash.distribuicao.map((d) => (
+                          <Cell key={d.name} fill={d.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            <div className="grid2" style={{ marginBottom: 18 }}>
+              <div className="card">
+                <h2>OCUPAÇÃO POR CIDADE</h2>
+                <p className="sub">Ranking de ocupação (%). Clique para filtrar.</p>
+                <div className="bars">
+                  {dash.ocupacao_por_cidade.map((b) => (
+                    <div key={b.cidade} className="bar" onClick={() => trocarCidade(b.id || '')}>
+                      <div
+                        className={`val ${b.valor === 0 ? 'empty' : ''}`}
+                        style={{ height: `${Math.max(b.valor, 2)}%` }}
+                      >
+                        <span style={b.valor === 0 ? { color: 'var(--muted)' } : undefined}>
+                          {b.valor === 0 ? '—' : `${b.valor}%`}
+                        </span>
+                      </div>
+                      <label>{b.cidade}</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card">
+                <h2>CAMPANHAS — A VENCER ({dash.a_vencer_lista.length})</h2>
+                <p className="sub">
+                  {dash.a_vencer_lista.length} campanhas em{' '}
+                  {new Set(dash.a_vencer_lista.map((a) => a.led)).size} LEDs · fim − hoje ≤ 7d
+                  (mesma base do topo).
+                </p>
+                <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Anunciante</th>
+                        <th>LED</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dash.a_vencer_lista.map((a, i) => (
+                        <tr key={i}>
+                          <td>{a.anunciante}</td>
+                          <td>{a.led}</td>
+                          <td>
+                            <span className="status-dot" style={{ background: 'var(--orange)' }} />
+                            {a.status}
+                            {a.dias !== undefined && (
+                              <small style={{ color: 'var(--muted)' }}>
+                                {' '}
+                                · {a.dias === 0 ? 'hoje' : `${a.dias}d`}
+                              </small>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {dash.a_vencer_lista.length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ color: 'var(--muted)' }}>
+                            Nenhuma vencendo no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <h2 style={{ marginTop: 16 }}>
+                  CAMPANHAS — A INICIAR ({(dash.a_iniciar_lista || []).length})
+                </h2>
+                <p className="sub">Início próximo · início − hoje ≤ 7d.</p>
+                <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Anunciante</th>
+                        <th>LED</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(dash.a_iniciar_lista || []).map((a, i) => (
+                        <tr key={i}>
+                          <td>{a.anunciante}</td>
+                          <td>{a.led}</td>
+                          <td>
+                            <span className="status-dot" style={{ background: 'var(--blue)' }} />
+                            {a.status}
+                            {a.dias !== undefined && (
+                              <small style={{ color: 'var(--muted)' }}> · em {a.dias}d</small>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {(dash.a_iniciar_lista || []).length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ color: 'var(--muted)' }}>
+                            Nenhuma iniciando no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="card" ref={painelRef} style={{ marginBottom: 18, scrollMarginTop: 12 }}>
+              <div className="tabs">
+                <div
+                  className={`tab ${tab === 'dashboard' ? 'active' : ''}`}
+                  onClick={() => setTab('dashboard')}
+                >
+                  Dashboard
+                </div>
+                {(can('planilha') || !online) && (
+                  <div
+                    className={`tab ${tab === 'planilha' ? 'active' : ''}`}
+                    onClick={() => setTab('planilha')}
+                  >
+                    Visualizar como planilha
+                  </div>
+                )}
+                {(can('relatorios') || !online) && (
+                  <div
+                    className={`tab ${tab === 'relatorios' ? 'active' : ''}`}
+                    onClick={() => setTab('relatorios')}
+                  >
+                    Relatórios
+                  </div>
+                )}
+                {(can('graficos') || !online) && (
+                  <div
+                    className={`tab ${tab === 'graficos' ? 'active' : ''}`}
+                    onClick={() => setTab('graficos')}
+                  >
+                    Gráficos
+                  </div>
+                )}
+                {can('reservas') && (
+                  <div
+                    className={`tab ${tab === 'reservas' ? 'active' : ''}`}
+                    onClick={() => setTab('reservas')}
+                  >
+                    Reservas
+                  </div>
+                )}
+              </div>
+
+              {tab === 'planilha' && (can('planilha') || !online) && (
+                <>
+                  <div className="toolbar">
+                    <input
+                      placeholder="🔍 Buscar…"
+                      value={q}
+                      onChange={(e) => {
+                        setQ(e.target.value);
+                        setSelecionadas([]);
+                      }}
+                    />
+                    <select
+                      value={stFilter}
+                      onChange={(e) => {
+                        setStFilter(e.target.value);
+                        setSelecionadas([]);
+                      }}
+                    >
+                      <option value="">Todos os status</option>
+                      {Object.keys(STATUS_ROTULO).map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_ROTULO[s]}
+                        </option>
+                      ))}
+                    </select>
+                    {podeEditar && (
+                      <button onClick={() => abrirNovaCampanha()}>＋ Nova campanha</button>
+                    )}
+                    {podeEditar && selecionadas.length > 0 && (
+                      <button className="danger" onClick={excluirSelecionadas}>
+                        🗑 Excluir {selecionadas.length} selecionada(s)
+                      </button>
+                    )}
+                    {can('exportar') && (
+                      <button onClick={() => api.exportar('xlsx', cidade, q, stFilter)}>
+                        ⬇ .xlsx
+                      </button>
+                    )}
+                    {can('exportar') && (
+                      <button onClick={() => api.exportar('csv', cidade, q, stFilter)}>
+                        ⬇ .csv
+                      </button>
+                    )}
+                    <button className="ghost" onClick={() => window.print()}>
+                      🖨 PDF
+                    </button>
+                  </div>
+                  {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          {podeEditar && (
+                            <th>
+                              <input
+                                type="checkbox"
+                                title="Selecionar visíveis"
+                                checked={
+                                  linhas.length > 0 &&
+                                  linhas.every((r) => !r.id || selecionadas.includes(r.id))
+                                }
+                                onChange={(e) => {
+                                  if (e.target.checked)
+                                    setSelecionadas((xs) => [
+                                      ...new Set([
+                                        ...xs,
+                                        ...(linhas.map((r) => r.id).filter(Boolean) as string[]),
+                                      ]),
+                                    ]);
+                                  else
+                                    setSelecionadas((xs) =>
+                                      xs.filter((id) => !linhas.some((r) => r.id === id)),
+                                    );
+                                }}
+                              />
+                            </th>
+                          )}
+                          {[
+                            ['cidade', 'Cidade'],
+                            ['led', 'LED'],
+                            ['anunciante', 'Anunciante'],
+                            ['inicio', 'Início'],
+                            ['fim', 'Fim'],
+                            ['status', 'Status'],
+                          ].map(([k, lb]) => (
+                            <th
+                              key={k}
+                              onClick={() => {
+                                if (k === sortK) setSortD((d) => (d === 1 ? -1 : 1));
+                                else {
+                                  setSortK(k);
+                                  setSortD(1);
+                                }
+                              }}
+                            >
+                              {lb}
+                              {sortK === k ? (sortD === 1 ? ' ▲' : ' ▼') : ''}
+                            </th>
+                          ))}
+                          {podeEditar && <th>Ações</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {online ? (
+                          linhas.length ? (
+                            linhas.map((r, i) => (
+                              <tr
+                                key={r.id || i}
+                                className={r.id && r.id === destaque ? 'destaque' : undefined}
+                              >
+                                {podeEditar && (
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      checked={!!r.id && selecionadas.includes(r.id)}
+                                      disabled={!r.id}
+                                      onChange={() => r.id && alternarSelecao(r.id)}
+                                    />
+                                  </td>
+                                )}
+                                <td>{r.cidade}</td>
+                                <td>{r.led}</td>
+                                <td>
+                                  {editInline &&
+                                  editInline.id === r.id &&
+                                  editInline.campo === 'anunciante' ? (
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                      <input
+                                        value={editInline.valor}
+                                        onChange={(e) =>
+                                          setEditInline({ ...editInline!, valor: e.target.value })
+                                        }
+                                      />
+                                      <button
+                                        onClick={salvarEditInline}
+                                        style={{ padding: '2px 8px', fontSize: '.7rem' }}
+                                      >
+                                        Salvar
+                                      </button>
+                                      <button
+                                        onClick={cancelarEditInline}
+                                        style={{ padding: '2px 8px', fontSize: '.7rem' }}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <input
+                                      defaultValue={r.anunciante}
+                                      onClick={() => iniciarEditInline(r, 'anunciante')}
+                                    />
+                                  )}
+                                </td>
+                                <td>{br(r.inicio)}</td>
+                                <td>{br(r.fim)}</td>
+                                <td>
+                                  <span
+                                    className="status-dot"
+                                    style={{ background: corStatus(r.status) }}
+                                  />
+                                  {STATUS_ROTULO[r.status] || r.status}
+                                  {r.status === 'a_vencer' &&
+                                    r.fim !== '—' &&
+                                    (() => {
+                                      const d = diasAte(r.fim);
+                                      const txt = d > 0 ? ` · ${d}d` : ' · encerra hoje';
+                                      return <small style={{ color: 'var(--muted)' }}>{txt}</small>;
+                                    })()}
+                                </td>
+                                {podeEditar && (
+                                  <td className="row-actions">
+                                    <button onClick={() => abrirEditarCampanha(r)}>Editar</button>
+                                    <button onClick={() => abrirReservas(r)}>Reservas</button>
+                                    <button className="danger" onClick={() => excluirCampanha(r)}>
+                                      Excluir
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={podeEditar ? 8 : 6}
+                                style={{ color: 'var(--muted)', textAlign: 'center' }}
+                              >
+                                Nenhuma campanha para os filtros atuais.
+                              </td>
+                            </tr>
+                          )
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={podeEditar ? 8 : 6}
+                              style={{ color: 'var(--muted)', textAlign: 'center' }}
+                            >
+                              Sem dados - API offline. Ligue o back-end para carregar.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
-                ))}
-                {relGrupos.length === 0 && <p className="sub">Nenhuma campanha para os filtros.</p>}
-              </div>
-            </>
-          )}
+                </>
+              )}
 
-          {tab === 'graficos' && (can('graficos') || !online) && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-              <div><h2 style={{ fontSize: '.85rem' }}>EVOLUÇÃO MENSAL (%)</h2>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={dash.evolucao_mensal}>
-                    <CartesianGrid stroke={tema.vars.border || "#232d4a"} strokeDasharray="3 3" />
-                    <XAxis dataKey="mes" stroke={tema.vars.muted || "#8b93ab"} fontSize={11} /><YAxis stroke={tema.vars.muted || "#8b93ab"} fontSize={11} domain={[40, 80]} />
-                    <Tooltip contentStyle={{ background: tema.vars.panel2 || "#0f1730", border: `1px solid ${tema.vars.border || "#232d4a"}` }} />
-                    <Line type="monotone" dataKey="ocupacao" stroke={tema.vars.teal || "#2dd4bf"} strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer></div>
-              <div><h2 style={{ fontSize: '.85rem' }}>OCUPAÇÃO POR CIDADE (%)</h2>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={dash.ocupacao_por_cidade}>
-                    <CartesianGrid stroke={tema.vars.border || "#232d4a"} strokeDasharray="3 3" />
-                    <XAxis dataKey="cidade" stroke={tema.vars.muted || "#8b93ab"} fontSize={10} /><YAxis stroke={tema.vars.muted || "#8b93ab"} fontSize={11} />
-                    <Tooltip contentStyle={{ background: tema.vars.panel2 || "#0f1730", border: `1px solid ${tema.vars.border || "#232d4a"}` }} />
-                    <Bar dataKey="valor" fill={tema.vars.teal || "#2dd4bf"} radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer></div>
-            </div>
-          )}
+              {tab === 'dashboard' && (
+                <>
+                  <p className="sub">
+                    {online
+                      ? `${linhas.length} campanha(s) no período · ${dash.periodo}`
+                      : `Demonstração offline · ${dash.periodo}`}
+                  </p>
+                  <div style={{ overflowX: 'auto', maxHeight: 440, overflowY: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Cidade</th>
+                          <th>LED</th>
+                          <th>Anunciante</th>
+                          <th>Início</th>
+                          <th>Fim</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linhas.map((r, i) => (
+                          <tr key={r.id || i}>
+                            <td>{r.cidade}</td>
+                            <td>{r.led}</td>
+                            <td
+                              style={r.status === 'livre' ? { color: 'var(--muted)' } : undefined}
+                            >
+                              {r.anunciante}
+                            </td>
+                            <td>{br(r.inicio)}</td>
+                            <td>{br(r.fim)}</td>
+                            <td>
+                              <span
+                                className="status-dot"
+                                style={{ background: corStatus(r.status) }}
+                              />
+                              {STATUS_ROTULO[r.status] || r.status}
+                            </td>
+                          </tr>
+                        ))}
+                        {linhas.length === 0 && (
+                          <tr>
+                            <td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
+                              {online
+                                ? 'Nenhuma campanha para os filtros atuais.'
+                                : 'Sem dados - API offline. Ligue o back-end para carregar.'}
+                            </td>
+                          </tr>
+                        )}
+                        {online && linhas.length === 0 && (
+                          <tr>
+                            <td colSpan={6} style={{ color: 'var(--muted)', textAlign: 'center' }}>
+                              Nenhuma campanha para os filtros atuais.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
 
-          {tab === 'reservas' && can('reservas') && (
-            <>
-              <div className="toolbar">
-                <span className="sub">Múltiplos períodos futuros por campanha, cada um com seu anunciante e toast de início próximo.</span>
-              </div>
-              {conteudoReservas()}
-            </>
-          )}
-        </div>
-        </>)}
-
-          {tela === 'config' && temConfig && (
-            <div className="card" style={{ marginBottom: 18 }}>
-              <h2>CONFIGURAÇÕES</h2>
-              <p className="sub">Acesso de usuários, cidades e cores do projeto.</p>
-              <div className="tabs">
-                {can('usuarios') && <div className={`tab ${configSecao === 'acesso' ? 'active' : ''}`} onClick={() => setConfigSecao('acesso')}>Acesso</div>}
-                {can('cidades') && <div className={`tab ${configSecao === 'cidades' ? 'active' : ''}`} onClick={() => setConfigSecao('cidades')}>Cidades</div>}
-                {can('config') && <div className={`tab ${configSecao === 'tema' ? 'active' : ''}`} onClick={() => setConfigSecao('tema')}>Cores</div>}
-                {can('config') && <div className={`tab ${configSecao === 'logo' ? 'active' : ''}`} onClick={() => setConfigSecao('logo')}>Logo</div>}
-                {can('config') && <div className={`tab ${configSecao === 'backup' ? 'active' : ''}`} onClick={() => setConfigSecao('backup')}>Backup</div>}
-                {can('importar') && <div className={`tab ${configSecao === 'importar' ? 'active' : ''}`} onClick={() => setConfigSecao('importar')}>Importar</div>}
-              </div>
-              {configSecao === 'acesso' && can('usuarios') && (
+              {tab === 'relatorios' && (can('relatorios') || !online) && (
                 <>
-                  <p className="sub">Defina por usuário: perfil, <b>cidades que pode ver</b> e <b>recursos extras</b> além do perfil. Sem cidade vinculada = todas.</p>
-                  {conteudoUsuarios()}
-                </>
-              )}
-              {configSecao === 'cidades' && can('cidades') && (
-                <>
-                  <p className="sub">Conforme a tabela cidades: id, nome, UF e fuso. Exclusão só de cidade vazia (sem LEDs).</p>
-                  {conteudoCidades()}
-                </>
-              )}
-              {configSecao === 'logo' && can('config') && (
-                <>
-                  <p className="sub">Logo da empresa no lugar do ícone, em tamanho fixo (38px), persistida no back-end.</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                    {(logoPrev || logo)
-                      ? <img className="brand-logo" src={(logoPrev || logo) as string} alt="prévia" />
-                      : <div className="icon" style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--panel2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>—</div>}
-                    <div className="toolbar" style={{ margin: 0 }}>
-                      <label className="toolbar-upload" title="PNG, JPG, GIF, WebP ou SVG até 512KB">
-                        Escolher imagem
-                        <input type="file" accept="image/*" hidden onChange={(e) => { lerLogo(e.target.files?.[0]); e.target.value = ''; }} />
-                      </label>
-                    </div>
+                  <div className="toolbar">
+                    <select value={relDim} onChange={(e) => setRelDim(e.target.value as any)}>
+                      <option value="led">Por LED</option>
+                      <option value="cidade">Por cidade</option>
+                      <option value="cliente">Por cliente</option>
+                    </select>
+                    <select value={relCidade} onChange={(e) => setRelCidade(e.target.value)}>
+                      <option value="">Todas as cidades</option>
+                      {cidades.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={relLed} onChange={(e) => setRelLed(e.target.value)}>
+                      <option value="">Todos os LEDs</option>
+                      {ledsLista.map((l: any) => (
+                        <option key={l.codigo} value={l.codigo}>
+                          {l.codigo}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      placeholder="Cliente"
+                      value={relAnu}
+                      onChange={(e) => setRelAnu(e.target.value)}
+                    />
+                    <input type="date" value={relDe} onChange={(e) => setRelDe(e.target.value)} />
+                    <input type="date" value={relAte} onChange={(e) => setRelAte(e.target.value)} />
+                    <button onClick={gerarPdf}>Gerar PDF ({relFiltradas.length})</button>
                   </div>
-                  {logoMsg && <p className={`spot-msg ${logoMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{logoMsg.texto}</p>}
-                  <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-                    <button disabled={!logoPrev} onClick={salvarLogo}>Salvar logo</button>
-                    {(logo || logoPrev) && <button className="ghost" onClick={removerLogo}>Remover</button>}
+                  <div className="toolbar">
+                    {Object.keys(STATUS_ROTULO)
+                      .filter((s) => s !== 'livre')
+                      .map((s) => (
+                        <label key={s} className="check">
+                          <input
+                            type="checkbox"
+                            checked={relStatus.includes(s)}
+                            onChange={() =>
+                              setRelStatus((xs) =>
+                                xs.includes(s) ? xs.filter((x) => x !== s) : [...xs, s],
+                              )
+                            }
+                          />
+                          {STATUS_ROTULO[s]}
+                        </label>
+                      ))}
                   </div>
-                </>
-              )}
-              {configSecao === 'importar' && can('importar') && (
-                <>
-                  <p className="sub">Planilha no padrão Cidade;LED;Anunciante;Início;Fim;ReservaN_Anunciante;ReservaN_Início;ReservaN_Fim — datas BR, ISO ou por extenso.</p>
-                  <div className="toolbar" style={{ marginBottom: 0 }}>
-                    <label className="toolbar-upload" title="Importar planilha">
-                      ⬆ Importar planilha
-                      <input type="file" accept=".csv,.txt" hidden onChange={(e) => { importarArquivo(e.target.files?.[0]); e.target.value = ''; }} />
-                    </label>
-                    <a href={api.modeloImportUrl}><button className="ghost" type="button">⬇ Modelo</button></a>
-                  </div>
-                  {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
-                </>
-              )}
-              {configSecao === 'backup' && can('config') && (
-                <>
-                  <p className="sub">Baixa o banco inteiro em JSON; restaurar <b>substitui tudo</b> — faça um backup antes.</p>
-                  <div className="toolbar" style={{ marginBottom: 0 }}>
-                    <button onClick={baixarBackup}>⬇ Baixar backup</button>
-                    <label className="toolbar-upload" title="Restaurar a partir de um backup JSON">
-                      ⬆ Restaurar backup
-                      <input type="file" accept=".json,application/json" hidden onChange={(e) => { restaurarBackup(e.target.files?.[0]); e.target.value = ''; }} />
-                    </label>
-                  </div>
-                  {bkMsg && <p className={`spot-msg ${bkMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{bkMsg.texto}</p>}
-                </>
-              )}
-              {configSecao === 'tema' && can('config') && (
-                <>
-                  <p className="sub">Paleta do projeto: fundo, fontes, destaques e gráficos. Aplica na hora em todo o painel.</p>
-                  <div className="perm-grid">
-                    {Object.keys(tema.rotulos).map((k) => (
-                      <label key={k} className="check">{tema.rotulos[k]}
-                        <input type="color" value={tema.vars[k] || '#000000'}
-                          onChange={(e) => setTema((t) => ({ ...t, vars: { ...t.vars, [k]: e.target.value } }))} />
-                        <small style={{ color: 'var(--muted)' }}>{tema.vars[k]}</small>
-                      </label>
+                  {relMsg && <p className={`spot-msg ${relMsg.tipo}`}>{relMsg.texto}</p>}
+                  <div style={{ overflowX: 'auto', maxHeight: 380, overflowY: 'auto' }}>
+                    {relGrupos.map(([g, itens]) => (
+                      <div key={g}>
+                        <h2 style={{ fontSize: '.85rem', marginTop: 12 }}>
+                          {g} ({itens.length})
+                        </h2>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Cidade</th>
+                              <th>LED</th>
+                              <th>Anunciante</th>
+                              <th>Início</th>
+                              <th>Fim</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {itens.map((r, i) => (
+                              <tr key={r.id || i}>
+                                <td>{r.cidade}</td>
+                                <td>{r.led}</td>
+                                <td>{r.anunciante}</td>
+                                <td>{br(r.inicio)}</td>
+                                <td>{br(r.fim)}</td>
+                                <td>
+                                  <span
+                                    className="status-dot"
+                                    style={{ background: corStatus(r.status) }}
+                                  />
+                                  {STATUS_ROTULO[r.status] || r.status}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     ))}
-                  </div>
-                  {Object.keys(tema.vars).length === 0 && <p className="sub">Carregando paleta…</p>}
-                  {temaMsg && <p className={`spot-msg ${temaMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{temaMsg.texto}</p>}
-                  <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-                    <button onClick={() => salvarTemaAtual(false)}>Salvar cores</button>
-                    <button className="ghost" onClick={() => salvarTemaAtual(true)}>Restaurar padrão</button>
+                    {relGrupos.length === 0 && (
+                      <p className="sub">Nenhuma campanha para os filtros.</p>
+                    )}
                   </div>
                 </>
               )}
+
+              {tab === 'graficos' && (can('graficos') || !online) && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                  <div>
+                    <h2 style={{ fontSize: '.85rem' }}>EVOLUÇÃO MENSAL (%)</h2>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={dash.evolucao_mensal}>
+                        <CartesianGrid
+                          stroke={tema.vars.border || '#232d4a'}
+                          strokeDasharray="3 3"
+                        />
+                        <XAxis dataKey="mes" stroke={tema.vars.muted || '#8b93ab'} fontSize={11} />
+                        <YAxis
+                          stroke={tema.vars.muted || '#8b93ab'}
+                          fontSize={11}
+                          domain={[40, 80]}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: tema.vars.panel2 || '#0f1730',
+                            border: `1px solid ${tema.vars.border || '#232d4a'}`,
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="ocupacao"
+                          stroke={tema.vars.teal || '#2dd4bf'}
+                          strokeWidth={2}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '.85rem' }}>OCUPAÇÃO POR CIDADE (%)</h2>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={dash.ocupacao_por_cidade}>
+                        <CartesianGrid
+                          stroke={tema.vars.border || '#232d4a'}
+                          strokeDasharray="3 3"
+                        />
+                        <XAxis
+                          dataKey="cidade"
+                          stroke={tema.vars.muted || '#8b93ab'}
+                          fontSize={10}
+                        />
+                        <YAxis stroke={tema.vars.muted || '#8b93ab'} fontSize={11} />
+                        <Tooltip
+                          contentStyle={{
+                            background: tema.vars.panel2 || '#0f1730',
+                            border: `1px solid ${tema.vars.border || '#232d4a'}`,
+                          }}
+                        />
+                        <Bar
+                          dataKey="valor"
+                          fill={tema.vars.teal || '#2dd4bf'}
+                          radius={[6, 6, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {tab === 'reservas' && can('reservas') && (
+                <>
+                  <div className="toolbar">
+                    <span className="sub">
+                      Múltiplos períodos futuros por campanha, cada um com seu anunciante e toast de
+                      início próximo.
+                    </span>
+                  </div>
+                  {conteudoReservas()}
+                </>
+              )}
             </div>
-          )}
+          </>
+        )}
+
+        {tela === 'config' && temConfig && (
+          <div className="card" style={{ marginBottom: 18 }}>
+            <h2>CONFIGURAÇÕES</h2>
+            <p className="sub">Acesso de usuários, cidades e cores do projeto.</p>
+            <div className="tabs">
+              {can('usuarios') && (
+                <div
+                  className={`tab ${configSecao === 'acesso' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('acesso')}
+                >
+                  Acesso
+                </div>
+              )}
+              {can('cidades') && (
+                <div
+                  className={`tab ${configSecao === 'cidades' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('cidades')}
+                >
+                  Cidades
+                </div>
+              )}
+              {can('config') && (
+                <div
+                  className={`tab ${configSecao === 'tema' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('tema')}
+                >
+                  Cores
+                </div>
+              )}
+              {can('config') && (
+                <div
+                  className={`tab ${configSecao === 'logo' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('logo')}
+                >
+                  Logo
+                </div>
+              )}
+              {can('config') && (
+                <div
+                  className={`tab ${configSecao === 'backup' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('backup')}
+                >
+                  Backup
+                </div>
+              )}
+              {can('importar') && (
+                <div
+                  className={`tab ${configSecao === 'importar' ? 'active' : ''}`}
+                  onClick={() => setConfigSecao('importar')}
+                >
+                  Importar
+                </div>
+              )}
+            </div>
+            {configSecao === 'acesso' && can('usuarios') && (
+              <>
+                <p className="sub">
+                  Defina por usuário: perfil, <b>cidades que pode ver</b> e <b>recursos extras</b>{' '}
+                  além do perfil. Sem cidade vinculada = todas.
+                </p>
+                {conteudoUsuarios()}
+              </>
+            )}
+            {configSecao === 'cidades' && can('cidades') && (
+              <>
+                <p className="sub">
+                  Conforme a tabela cidades: id, nome, UF e fuso. Exclusão só de cidade vazia (sem
+                  LEDs).
+                </p>
+                {conteudoCidades()}
+              </>
+            )}
+            {configSecao === 'logo' && can('config') && (
+              <>
+                <p className="sub">
+                  Logo da empresa no lugar do ícone, em tamanho fixo (38px), persistida no back-end.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                  {logoPrev || logo ? (
+                    <img className="brand-logo" src={(logoPrev || logo) as string} alt="prévia" />
+                  ) : (
+                    <div
+                      className="icon"
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        background: 'var(--panel2)',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      —
+                    </div>
+                  )}
+                  <div className="toolbar" style={{ margin: 0 }}>
+                    <label className="toolbar-upload" title="PNG, JPG, GIF, WebP ou SVG até 512KB">
+                      Escolher imagem
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(e) => {
+                          lerLogo(e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+                {logoMsg && (
+                  <p className={`spot-msg ${logoMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
+                    {logoMsg.texto}
+                  </p>
+                )}
+                <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
+                  <button disabled={!logoPrev} onClick={salvarLogo}>
+                    Salvar logo
+                  </button>
+                  {(logo || logoPrev) && (
+                    <button className="ghost" onClick={removerLogo}>
+                      Remover
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            {configSecao === 'importar' && can('importar') && (
+              <>
+                <p className="sub">
+                  Planilha no padrão
+                  Cidade;LED;Anunciante;Início;Fim;ReservaN_Anunciante;ReservaN_Início;ReservaN_Fim
+                  — datas BR, ISO ou por extenso.
+                </p>
+                <div className="toolbar" style={{ marginBottom: 0 }}>
+                  <label className="toolbar-upload" title="Importar planilha">
+                    ⬆ Importar planilha
+                    <input
+                      type="file"
+                      accept=".csv,.txt"
+                      hidden
+                      onChange={(e) => {
+                        importarArquivo(e.target.files?.[0]);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  <a href={api.modeloImportUrl}>
+                    <button className="ghost" type="button">
+                      ⬇ Modelo
+                    </button>
+                  </a>
+                </div>
+                {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
+              </>
+            )}
+            {configSecao === 'backup' && can('config') && (
+              <>
+                <p className="sub">
+                  Baixa o banco inteiro em JSON; restaurar <b>substitui tudo</b> — faça um backup
+                  antes.
+                </p>
+                <div className="toolbar" style={{ marginBottom: 0 }}>
+                  <button onClick={baixarBackup}>⬇ Baixar backup</button>
+                  <label className="toolbar-upload" title="Restaurar a partir de um backup JSON">
+                    ⬆ Restaurar backup
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      hidden
+                      onChange={(e) => {
+                        restaurarBackup(e.target.files?.[0]);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+                {bkMsg && (
+                  <p className={`spot-msg ${bkMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{bkMsg.texto}</p>
+                )}
+              </>
+            )}
+            {configSecao === 'tema' && can('config') && (
+              <>
+                <p className="sub">
+                  Paleta do projeto: fundo, fontes, destaques e gráficos. Aplica na hora em todo o
+                  painel.
+                </p>
+                <div className="perm-grid">
+                  {Object.keys(tema.rotulos).map((k) => (
+                    <label key={k} className="check">
+                      {tema.rotulos[k]}
+                      <input
+                        type="color"
+                        value={tema.vars[k] || '#000000'}
+                        onChange={(e) =>
+                          setTema((t) => ({ ...t, vars: { ...t.vars, [k]: e.target.value } }))
+                        }
+                      />
+                      <small style={{ color: 'var(--muted)' }}>{tema.vars[k]}</small>
+                    </label>
+                  ))}
+                </div>
+                {Object.keys(tema.vars).length === 0 && <p className="sub">Carregando paleta…</p>}
+                {temaMsg && (
+                  <p className={`spot-msg ${temaMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
+                    {temaMsg.texto}
+                  </p>
+                )}
+                <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
+                  <button onClick={() => salvarTemaAtual(false)}>Salvar cores</button>
+                  <button className="ghost" onClick={() => salvarTemaAtual(true)}>
+                    Restaurar padrão
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <footer>
-          <span>LATÊNCIA DE DADOS: {lat} · TODOS OS PAINÉIS REPORTANDO{online ? '' : ' · MODO OFFLINE (mockup)'}</span>
+          <span>
+            LATÊNCIA DE DADOS: {lat} · TODOS OS PAINÉIS REPORTANDO
+            {online ? '' : ' · MODO OFFLINE (mockup)'}
+          </span>
           <span>MOCKUP DE INTERFACE · PERÍODO: {dash.periodo.toUpperCase()}</span>
         </footer>
       </div>
 
       {modal && (
-        <div className="modal-bg" onClick={() => { setModal(false); setEditCampId(null); }}>
+        <div
+          className="modal-bg"
+          onClick={() => {
+            setModal(false);
+            setEditCampId(null);
+          }}
+        >
           <div className="card modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{editCampId ? 'EDITAR CAMPANHA' : 'CADASTRAR CAMPANHA'} — {form.led_codigo}</h2>
-            <p className="sub">Validação de datas ativa (31/9 é rejeitado — spec §1). Limite de 8 espaços de cliente por LED.</p>
-            <input placeholder="Anunciante" value={form.anunciante} onChange={(e) => setForm({ ...form, anunciante: e.target.value })} />
-            <select value={form.cidade_id} onChange={(e) => {
-              const cid = e.target.value;
-              const leds = ledsLista.length ? ledsLista : dash.gantt_por_led;
-              const mesmoLed = leds.some((l: any) => l.codigo === form.led_codigo && l.cidade_id === cid);
-              const primeiro = leds.find((l: any) => l.cidade_id === cid);
-              setForm({ ...form, cidade_id: cid, led_codigo: mesmoLed ? form.led_codigo : (primeiro?.codigo || form.led_codigo) });
-            }}>
-              {(cidades.length ? cidades : [{ id: 'aracaju', nome: 'Aracaju', uf: 'SE' }]).map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}/{c.uf}</option>
-              ))}
+            <h2>
+              {editCampId ? 'EDITAR CAMPANHA' : 'CADASTRAR CAMPANHA'} — {form.led_codigo}
+            </h2>
+            <p className="sub">
+              Validação de datas ativa (31/9 é rejeitado — spec §1). Limite de 8 espaços de cliente
+              por LED.
+            </p>
+            <input
+              placeholder="Anunciante"
+              value={form.anunciante}
+              onChange={(e) => setForm({ ...form, anunciante: e.target.value })}
+            />
+            <select
+              value={form.cidade_id}
+              onChange={(e) => {
+                const cid = e.target.value;
+                const leds = ledsLista.length ? ledsLista : dash.gantt_por_led;
+                const mesmoLed = leds.some(
+                  (l: any) => l.codigo === form.led_codigo && l.cidade_id === cid,
+                );
+                const primeiro = leds.find((l: any) => l.cidade_id === cid);
+                setForm({
+                  ...form,
+                  cidade_id: cid,
+                  led_codigo: mesmoLed ? form.led_codigo : primeiro?.codigo || form.led_codigo,
+                });
+              }}
+            >
+              {(cidades.length ? cidades : [{ id: 'aracaju', nome: 'Aracaju', uf: 'SE' }]).map(
+                (c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}/{c.uf}
+                  </option>
+                ),
+              )}
             </select>
-            <select value={form.led_codigo} onChange={(e) => {
-              const led = (ledsLista.length ? ledsLista : dash.gantt_por_led).find((l: any) => l.codigo === e.target.value);
-              setForm({ ...form, led_codigo: e.target.value, cidade_id: led?.cidade_id || form.cidade_id });
-            }}>
+            <select
+              value={form.led_codigo}
+              onChange={(e) => {
+                const led = (ledsLista.length ? ledsLista : dash.gantt_por_led).find(
+                  (l: any) => l.codigo === e.target.value,
+                );
+                setForm({
+                  ...form,
+                  led_codigo: e.target.value,
+                  cidade_id: led?.cidade_id || form.cidade_id,
+                });
+              }}
+            >
               {(() => {
                 const todos = ledsLista.length ? ledsLista : dash.gantt_por_led;
-                const ops = todos.filter((l: any) => !form.cidade_id || l.cidade_id === form.cidade_id);
-                return (ops.length ? ops : todos).map((l: any) => <option key={l.codigo} value={l.codigo}>{l.codigo}</option>);
+                const ops = todos.filter(
+                  (l: any) => !form.cidade_id || l.cidade_id === form.cidade_id,
+                );
+                return (ops.length ? ops : todos).map((l: any) => (
+                  <option key={l.codigo} value={l.codigo}>
+                    {l.codigo}
+                  </option>
+                ));
               })()}
             </select>
-            <input type="date" value={form.inicio} onChange={(e) => setForm({ ...form, inicio: e.target.value })} />
-            <input type="date" value={form.fim} onChange={(e) => setForm({ ...form, fim: e.target.value })} />
-            <label className="check"><input type="checkbox" checked={form.reservada} onChange={(e) => setForm({ ...form, reservada: e.target.checked })} /> Campanha reservada (futura)</label>
+            <input
+              type="date"
+              value={form.inicio}
+              onChange={(e) => setForm({ ...form, inicio: e.target.value })}
+            />
+            <input
+              type="date"
+              value={form.fim}
+              onChange={(e) => setForm({ ...form, fim: e.target.value })}
+            />
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.reservada}
+                onChange={(e) => setForm({ ...form, reservada: e.target.checked })}
+              />{' '}
+              Campanha reservada (futura)
+            </label>
             <div className="toolbar" style={{ marginTop: 10 }}>
               <button onClick={criarCampanha}>Salvar</button>
-              <button className="ghost" onClick={() => { setModal(false); setEditCampId(null); }}>Cancelar</button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setModal(false);
+                  setEditCampId(null);
+                }}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
       )}
       {resModal && can('reservas') && (
-        <div className="modal-bg" onClick={() => { setResModal(false); }}>
+        <div
+          className="modal-bg"
+          onClick={() => {
+            setResModal(false);
+          }}
+        >
           <div className="card modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <h2>CADASTRO DE RESERVAS</h2>
-            <p className="sub">Múltiplos períodos futuros por campanha, cada um com seu anunciante; cada um gera toast de início próximo.</p>
+            <p className="sub">
+              Múltiplos períodos futuros por campanha, cada um com seu anunciante; cada um gera
+              toast de início próximo.
+            </p>
             {conteudoReservas()}
             <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-              <button className="ghost" onClick={() => { setResModal(false); }}>Fechar</button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setResModal(false);
+                }}
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>
@@ -1427,95 +2810,264 @@ export default function App() {
         <div className="modal-bg" onClick={() => setResMenu(null)}>
           <div className="card modal" onClick={(e) => e.stopPropagation()}>
             <h2>RESERVAS — {resMenu.anunciante.toUpperCase()}</h2>
-            <p className="sub">{resMenu.led} · múltiplos períodos futuros, cada um com seu anunciante; cada um gera toast de início próximo. Sem sobreposição com a campanha nem entre reservas.</p>
+            <p className="sub">
+              {resMenu.led} · múltiplos períodos futuros, cada um com seu anunciante; cada um gera
+              toast de início próximo. Sem sobreposição com a campanha nem entre reservas.
+            </p>
             <table>
-              <thead><tr><th>Anunciante</th><th>Início</th><th>Fim</th>{podeEditar && <th>Ações</th>}</tr></thead>
+              <thead>
+                <tr>
+                  <th>Anunciante</th>
+                  <th>Início</th>
+                  <th>Fim</th>
+                  {podeEditar && <th>Ações</th>}
+                </tr>
+              </thead>
               <tbody>
                 {resLista.map((r: any) => (
                   <tr key={r.id}>
-                    <td>{r.anunciante}</td><td>{br(r.inicio)}</td><td>{br(r.fim)}</td>
-                    {podeEditar && <td className="row-actions"><button className="danger" onClick={() => excluirReserva(r.id)}>Excluir</button></td>}
+                    <td>{r.anunciante}</td>
+                    <td>{br(r.inicio)}</td>
+                    <td>{br(r.fim)}</td>
+                    {podeEditar && (
+                      <td className="row-actions">
+                        <button className="danger" onClick={() => excluirReserva(r.id)}>
+                          Excluir
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
-                {resLista.length === 0 && <tr><td colSpan={podeEditar ? 4 : 3} style={{ color: 'var(--muted)' }}>Nenhuma reserva futura.</td></tr>}
+                {resLista.length === 0 && (
+                  <tr>
+                    <td colSpan={podeEditar ? 4 : 3} style={{ color: 'var(--muted)' }}>
+                      Nenhuma reserva futura.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
             {podeEditar && (
               <div className="spot-form">
                 <h2 style={{ fontSize: '.85rem' }}>＋ NOVA RESERVA</h2>
-                <label>Anunciante da reserva (vazio = o da campanha)<input placeholder={resMenu.anunciante} value={resForm.anunciante} onChange={(e) => setResForm({ ...resForm, anunciante: e.target.value })} /></label>
+                <label>
+                  Anunciante da reserva (vazio = o da campanha)
+                  <input
+                    placeholder={resMenu.anunciante}
+                    value={resForm.anunciante}
+                    onChange={(e) => setResForm({ ...resForm, anunciante: e.target.value })}
+                  />
+                </label>
                 <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                  <label>Início<input type="date" value={resForm.inicio} onChange={(e) => setResForm({ ...resForm, inicio: e.target.value })} /></label>
-                  <label>Fim<input type="date" value={resForm.fim} onChange={(e) => setResForm({ ...resForm, fim: e.target.value })} /></label>
+                  <label>
+                    Início
+                    <input
+                      type="date"
+                      value={resForm.inicio}
+                      onChange={(e) => setResForm({ ...resForm, inicio: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Fim
+                    <input
+                      type="date"
+                      value={resForm.fim}
+                      onChange={(e) => setResForm({ ...resForm, fim: e.target.value })}
+                    />
+                  </label>
                 </div>
-                {resMsg && <p className={`spot-msg ${resMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{resMsg.texto}</p>}
+                {resMsg && (
+                  <p className={`spot-msg ${resMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
+                    {resMsg.texto}
+                  </p>
+                )}
                 <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={salvarReserva}>Adicionar reserva</button>
                 </div>
               </div>
             )}
             <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-              <button className="ghost" onClick={() => setResMenu(null)}>Fechar</button>
+              <button className="ghost" onClick={() => setResMenu(null)}>
+                Fechar
+              </button>
             </div>
           </div>
         </div>
       )}
       {ledsMenu && (
-        <div className="modal-bg" onClick={() => { setLedsMenu(false); setLedEditando(null); }}>
+        <div
+          className="modal-bg"
+          onClick={() => {
+            setLedsMenu(false);
+            setLedEditando(null);
+          }}
+        >
           <div className="card modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <h2>CADASTRO DE LEDS</h2>
-            <p className="sub">Cada painel tem 8 espaços de cliente. Exclusão só de LED vazio; renomear move campanhas e spots juntos.</p>
+            <p className="sub">
+              Cada painel tem 8 espaços de cliente. Exclusão só de LED vazio; renomear move
+              campanhas e spots juntos.
+            </p>
             <div className="table-scroll">
-            <table>
-              <thead><tr><th>Código</th><th>Endereço</th><th>Cidade</th><th>Espaços</th>{podeEditar && <th>Ações</th>}</tr></thead>
-              <tbody>
-                {(ledsLista.length ? ledsLista : dash.gantt_por_led.map((l: any) => ({
-                  codigo: l.codigo, endereco: l.endereco, cidade_id: l.cidade_id,
-                  espacos_usados: l.espacos_usados ?? l.campanhas.length, espacos_total: l.espacos_total ?? 8,
-                }))).map((l: any) => (
-                  <tr key={l.codigo}>
-                    <td><b>{l.codigo}</b></td><td>{l.endereco}</td><td>{l.cidade_id}</td>
-                    <td>
-                      <span className="slots" title={`${l.espacos_usados} de ${l.espacos_total} espaços ocupados`}>
-                        <span className="slots-bar"><span style={{ width: `${Math.min(100, Math.round((l.espacos_usados / Math.max(1, l.espacos_total)) * 100))}%` }} /></span>
-                        {l.espacos_usados}/{l.espacos_total}
-                      </span>
-                    </td>
-                    {podeEditar && (
-                      <td className="row-actions">
-                        <button onClick={() => { setLedEditando(l.codigo); setLedForm({ codigo: l.codigo, endereco: l.endereco, cidade_id: l.cidade_id, espacos: l.espacos_proprio === null || l.espacos_proprio === undefined ? '' : String(l.espacos_proprio) }); }}>Editar</button>
-                        <button className="danger" onClick={() => excluirLed(l.codigo)}>Excluir</button>
-                      </td>
-                    )}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Endereço</th>
+                    <th>Cidade</th>
+                    <th>Espaços</th>
+                    {podeEditar && <th>Ações</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(ledsLista.length
+                    ? ledsLista
+                    : dash.gantt_por_led.map((l: any) => ({
+                        codigo: l.codigo,
+                        endereco: l.endereco,
+                        cidade_id: l.cidade_id,
+                        espacos_usados: l.espacos_usados ?? l.campanhas.length,
+                        espacos_total: l.espacos_total ?? 8,
+                      }))
+                  ).map((l: any) => (
+                    <tr key={l.codigo}>
+                      <td>
+                        <b>{l.codigo}</b>
+                      </td>
+                      <td>{l.endereco}</td>
+                      <td>{l.cidade_id}</td>
+                      <td>
+                        <span
+                          className="slots"
+                          title={`${l.espacos_usados} de ${l.espacos_total} espaços ocupados`}
+                        >
+                          <span className="slots-bar">
+                            <span
+                              style={{
+                                width: `${Math.min(100, Math.round((l.espacos_usados / Math.max(1, l.espacos_total)) * 100))}%`,
+                              }}
+                            />
+                          </span>
+                          {l.espacos_usados}/{l.espacos_total}
+                        </span>
+                      </td>
+                      {podeEditar && (
+                        <td className="row-actions">
+                          <button
+                            onClick={() => {
+                              setLedEditando(l.codigo);
+                              setLedForm({
+                                codigo: l.codigo,
+                                endereco: l.endereco,
+                                cidade_id: l.cidade_id,
+                                espacos:
+                                  l.espacos_proprio === null || l.espacos_proprio === undefined
+                                    ? ''
+                                    : String(l.espacos_proprio),
+                              });
+                            }}
+                          >
+                            Editar
+                          </button>
+                          <button className="danger" onClick={() => excluirLed(l.codigo)}>
+                            Excluir
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
             {podeEditar && (
               <div className="spot-form">
-                <h2 style={{ fontSize: '.85rem' }}>{ledEditando ? `EDITAR ${ledEditando}` : '＋ NOVO LED'}</h2>
+                <h2 style={{ fontSize: '.85rem' }}>
+                  {ledEditando ? `EDITAR ${ledEditando}` : '＋ NOVO LED'}
+                </h2>
                 <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }}>
-                  <label>Código<input placeholder="AJU 05" value={ledForm.codigo} onChange={(e) => setLedForm({ ...ledForm, codigo: e.target.value.toUpperCase() })} /></label>
-                  <label>Endereço<input placeholder="Av. ..." value={ledForm.endereco} onChange={(e) => setLedForm({ ...ledForm, endereco: e.target.value })} /></label>
-                  <label>Cidade
-                    <select value={ledForm.cidade_id} onChange={(e) => setLedForm({ ...ledForm, cidade_id: e.target.value })}>
-                      {(cidades.length ? cidades : [{ id: 'aracaju', nome: 'Aracaju', uf: 'SE' }]).map((c) => (
-                        <option key={c.id} value={c.id}>{c.nome}/{c.uf}</option>
+                  <label>
+                    Código
+                    <input
+                      placeholder="AJU 05"
+                      value={ledForm.codigo}
+                      onChange={(e) =>
+                        setLedForm({ ...ledForm, codigo: e.target.value.toUpperCase() })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Endereço
+                    <input
+                      placeholder="Av. ..."
+                      value={ledForm.endereco}
+                      onChange={(e) => setLedForm({ ...ledForm, endereco: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Cidade
+                    <select
+                      value={ledForm.cidade_id}
+                      onChange={(e) => setLedForm({ ...ledForm, cidade_id: e.target.value })}
+                    >
+                      {(cidades.length
+                        ? cidades
+                        : [{ id: 'aracaju', nome: 'Aracaju', uf: 'SE' }]
+                      ).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome}/{c.uf}
+                        </option>
                       ))}
                     </select>
                   </label>
-                  <label>Espaços (vazio = padrão)<input type="number" min={1} placeholder="8" value={ledForm.espacos} onChange={(e) => setLedForm({ ...ledForm, espacos: e.target.value })} /></label>
+                  <label>
+                    Espaços (vazio = padrão)
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="8"
+                      value={ledForm.espacos}
+                      onChange={(e) => setLedForm({ ...ledForm, espacos: e.target.value })}
+                    />
+                  </label>
                 </div>
-                {ledMsg && <p className={`spot-msg ${ledMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{ledMsg.texto}</p>}
+                {ledMsg && (
+                  <p className={`spot-msg ${ledMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
+                    {ledMsg.texto}
+                  </p>
+                )}
                 <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-                  <button onClick={salvarLed}>{ledEditando ? 'Salvar alterações' : 'Cadastrar LED'}</button>
-                  {ledEditando && <button className="ghost" onClick={() => { setLedEditando(null); setLedForm({ codigo: '', endereco: '', cidade_id: ledForm.cidade_id, espacos: '' }); }}>Cancelar edição</button>}
+                  <button onClick={salvarLed}>
+                    {ledEditando ? 'Salvar alterações' : 'Cadastrar LED'}
+                  </button>
+                  {ledEditando && (
+                    <button
+                      className="ghost"
+                      onClick={() => {
+                        setLedEditando(null);
+                        setLedForm({
+                          codigo: '',
+                          endereco: '',
+                          cidade_id: ledForm.cidade_id,
+                          espacos: '',
+                        });
+                      }}
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
                 </div>
               </div>
             )}
             <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-              <button className="ghost" onClick={() => { setLedsMenu(false); setLedEditando(null); }}>Fechar</button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setLedsMenu(false);
+                  setLedEditando(null);
+                }}
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>
@@ -1525,33 +3077,98 @@ export default function App() {
           <div className="card modal" onClick={(e) => e.stopPropagation()}>
             <h2>EDITAR RESERVA</h2>
             <p className="sub">{resEditM.campLabel}</p>
-            <label>Anunciante da reserva<input value={resEditM.anunciante} onChange={(e) => setResEditM({ ...resEditM, anunciante: e.target.value })} /></label>
+            <label>
+              Anunciante da reserva
+              <input
+                value={resEditM.anunciante}
+                onChange={(e) => setResEditM({ ...resEditM, anunciante: e.target.value })}
+              />
+            </label>
             <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <label>Início<input type="date" value={resEditM.inicio} onChange={(e) => setResEditM({ ...resEditM, inicio: e.target.value })} /></label>
-              <label>Fim<input type="date" value={resEditM.fim} onChange={(e) => setResEditM({ ...resEditM, fim: e.target.value })} /></label>
+              <label>
+                Início
+                <input
+                  type="date"
+                  value={resEditM.inicio}
+                  onChange={(e) => setResEditM({ ...resEditM, inicio: e.target.value })}
+                />
+              </label>
+              <label>
+                Fim
+                <input
+                  type="date"
+                  value={resEditM.fim}
+                  onChange={(e) => setResEditM({ ...resEditM, fim: e.target.value })}
+                />
+              </label>
             </div>
-            {resMsgM && <p className={`spot-msg ${resMsgM.tipo === 'ok' ? 'ok' : 'erro'}`}>{resMsgM.texto}</p>}
+            {resMsgM && (
+              <p className={`spot-msg ${resMsgM.tipo === 'ok' ? 'ok' : 'erro'}`}>{resMsgM.texto}</p>
+            )}
             <div className="toolbar" style={{ marginTop: 10 }}>
               <button onClick={salvarEdicaoReserva}>Salvar alterações</button>
-              <button className="ghost" onClick={() => setResEditM(null)}>Cancelar</button>
+              <button className="ghost" onClick={() => setResEditM(null)}>
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
       )}
       {onboarding && (
         <div className="modal-bg" onClick={() => {}} style={{ background: 'rgba(0,0,0,.85)' }}>
-          <div className="card modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, textAlign: 'center' }}>
+          <div
+            className="card modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 520, textAlign: 'center' }}
+          >
             <h2 style={{ fontSize: '1.2rem', marginBottom: 8 }}>Bem-vindo ao Controle de LED</h2>
-            <p className="sub" style={{ marginBottom: 20 }}>Guia rápido para começar:</p>
+            <p className="sub" style={{ marginBottom: 20 }}>
+              Guia rápido para começar:
+            </p>
             <div style={{ textAlign: 'left', marginBottom: 20 }}>
-              <div style={{ marginBottom: 10, color: 'var(--text)' }}><b>1.</b> Veja os painéis no Gantt e clique em um para criar campanhas.</div>
-              <div style={{ marginBottom: 10, color: 'var(--text)' }}><b>2.</b> Use Planilha para editar anunciante, datas e status em lote.</div>
-              <div style={{ marginBottom: 10, color: 'var(--text)' }}><b>3.</b> Reservas criam períodos futuros com aviso de início próximo.</div>
-              <div style={{ marginBottom: 20, color: 'var(--text)' }}><b>4.</b> Atalhos: <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>Ctrl+N</code> nova campanha · <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>Ctrl+S</code> salvar · <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>Esc</code> cancelar.</div>
+              <div style={{ marginBottom: 10, color: 'var(--text)' }}>
+                <b>1.</b> Veja os painéis no Gantt e clique em um para criar campanhas.
+              </div>
+              <div style={{ marginBottom: 10, color: 'var(--text)' }}>
+                <b>2.</b> Use Planilha para editar anunciante, datas e status em lote.
+              </div>
+              <div style={{ marginBottom: 10, color: 'var(--text)' }}>
+                <b>3.</b> Reservas criam períodos futuros com aviso de início próximo.
+              </div>
+              <div style={{ marginBottom: 20, color: 'var(--text)' }}>
+                <b>4.</b> Atalhos:{' '}
+                <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>
+                  Ctrl+N
+                </code>{' '}
+                nova campanha ·{' '}
+                <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>
+                  Ctrl+S
+                </code>{' '}
+                salvar ·{' '}
+                <code style={{ background: 'var(--panel2)', padding: '2px 6px', borderRadius: 4 }}>
+                  Esc
+                </code>{' '}
+                cancelar.
+              </div>
             </div>
             <div className="toolbar" style={{ justifyContent: 'center', gap: 10 }}>
-              <button className="ghost" onClick={() => { setOnboarding(false); localStorage.setItem('led_onboarding', '1'); }}>Pular</button>
-              <button onClick={() => { setOnboarding(false); localStorage.setItem('led_onboarding', '1'); }}>Começar</button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setOnboarding(false);
+                  localStorage.setItem('led_onboarding', '1');
+                }}
+              >
+                Pular
+              </button>
+              <button
+                onClick={() => {
+                  setOnboarding(false);
+                  localStorage.setItem('led_onboarding', '1');
+                }}
+              >
+                Começar
+              </button>
             </div>
           </div>
         </div>
