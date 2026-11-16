@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Login from './components/Login';
 import {
   PieChart,
   Pie,
@@ -512,25 +513,6 @@ export default function App() {
     return blocos;
   };
 
-  const fazerLogin = async () => {
-    setLogando(true);
-    setLoginErro('');
-    try {
-      const r = await api.login(login, senha);
-      localStorage.setItem('led_token', r.token);
-      localStorage.setItem('led_perfil', r.perfil);
-      setToken(r.token);
-      setPerfil(r.perfil);
-      setDismissed([]);
-      carregar();
-      if (localStorage.getItem('led_onboarding') !== '1') setOnboarding(true);
-    } catch {
-      setLoginErro('Login inválido — use admin/admin123 (demo). Entrando offline…');
-      setToken('offline');
-    } finally {
-      setLogando(false);
-    }
-  };
   const sair = () => {
     localStorage.removeItem('led_token');
     localStorage.removeItem('led_perfil');
@@ -1473,59 +1455,27 @@ export default function App() {
 
   if (!token) {
     return (
-      <div className="login-wrap">
-        <div className="card login-card">
-          <div className="brand" style={{ marginBottom: 12 }}>
-            {logo ? (
-              <img className="brand-logo" src={logo} alt="Marca Controle de LED" />
-            ) : (
-              <div className="icon" aria-hidden="true">
-                📺
-              </div>
-            )}
-            <div>
-              <h1>CONTROLE DE LED</h1>
-              <span>PAINÉIS DE VEICULAÇÃO</span>
-            </div>
-          </div>
-          <h2>Login</h2>
-          <p className="sub">Fluxo §5 · perfis §9.2 (admin / regional / operador / visualizador)</p>
-          <label htmlFor="login-input">Login</label>
-          <input
-            id="login-input"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-            placeholder="login"
-            aria-describedby={loginErro ? 'login-erro' : undefined}
-          />
-          <label htmlFor="senha-input">Senha</label>
-          <input
-            id="senha-input"
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            placeholder="senha"
-            aria-describedby={loginErro ? 'login-erro' : undefined}
-          />
-          {loginErro && (
-            <p
-              id="login-erro"
-              className="sub"
-              style={{ color: 'var(--red)' }}
-              role="alert"
-              aria-live="polite"
-            >
-              {loginErro}
-            </p>
-          )}
-          <button onClick={fazerLogin} disabled={logando}>
-            {logando ? 'Entrando…' : 'Entrar'}
-          </button>
-          <p className="sub" style={{ marginTop: 10 }}>
-            Demo: admin/admin123 · viewer/view123
-          </p>
-        </div>
-      </div>
+      <Login
+        token={token}
+        login={login}
+        setLogin={setLogin}
+        senha={senha}
+        setSenha={setSenha}
+        logando={logando}
+        setLogando={setLogando}
+        loginErro={loginErro}
+        setLoginErro={setLoginErro}
+        logo={logo}
+        onLogin={(r) => {
+          localStorage.setItem('led_token', r.token);
+          localStorage.setItem('led_perfil', r.perfil);
+          setToken(r.token);
+          setPerfil(r.perfil);
+          setDismissed([]);
+          carregar();
+          if (localStorage.getItem('led_onboarding') !== '1') setOnboarding(true);
+        }}
+      />
     );
   }
 
