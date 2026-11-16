@@ -153,4 +153,17 @@ try {
   if (!notCols.includes('cidade_id')) db.exec("ALTER TABLE notificacoes ADD COLUMN cidade_id TEXT NOT NULL DEFAULT ''");
 } catch {}
 
+// Suporte opcional a Supabase/PostgreSQL via DATABASE_URL.
+// O restante do backend (index.js) usa a API síncrona de better-sqlite3.
+// Se DATABASE_URL estiver definido, use o adaptador backend/src/db.supabase.js
+// (assíncrono, com pg) e ajuste index.js para importá-lo em vez de './db'.
+const USING_POSTGRES = !!process.env.DATABASE_URL;
+if (USING_POSTGRES) {
+  console.warn('[db] DATABASE_URL detectado: o SQLite não será usado. ' +
+    'Para produção no Supabase/Render, importe backend/src/db.supabase.js ' +
+    'em src/index.js e adapte as chamadas para o estilo assíncrono (pg).');
+}
+
 module.exports = db;
+module.exports.USING_POSTGRES = USING_POSTGRES;
+module.exports.isUsingPostgres = () => USING_POSTGRES;

@@ -65,3 +65,35 @@ Sem API no ar, o painel mostra telas vazias com aviso (badge `OFFLINE`).
 | [08 — Correções](docs/08-correcoes.md) | histórico: features + debugs por rodada |
 | [09 — Implantação](docs/09-implantacao.md) | passo a passo local (Windows) e nuvem (Render, VPS+Nginx+PM2, Vercel) |
 | [10 — Implantação Docker](docs/10-implantacao-docker.md) | roteiro local e nuvem só com Docker (Compose, HTTPS, Render, Railway) |
+
+---
+
+## Deploy (Vercel + Render + Supabase)
+
+### Frontend — Vercel
+1. Crie o projeto na Vercel importando a pasta `frontend/`.
+2. Defina a variável de ambiente `VITE_API_URL` com a URL pública do back-end no Render (ex.: `https://saas-leds-api.onrender.com`).
+3. O `vercel.json` já está configurado: build em `dist` e fallback SPA para `/index.html`.
+4. Comando de build: `npm run build` (Vite).
+
+### Backend — Render
+1. Crie um **Web Service** na Render importando a pasta `backend/`.
+2. Use o `render.yaml` já presente (ou configure manualmente):
+   - Build: `npm install`
+   - Start: `npm start`
+   - Disco persistente: `led-data` montado em `/data` (guarda o `data.db` do SQLite).
+3. Variáveis de ambiente obrigatórias:
+   - `JWT_SECRET` (gere um segredo forte em produção).
+   - `SEED=true` só em homolog para popular o dataset demo.
+   - `DATABASE_URL` se for usar Supabase/PostgreSQL (veja abaixo).
+4. Health check: `/api/health`.
+
+### Banco — Supabase (opcional, substitui o SQLite)
+1. Crie um projeto no Supabase e rode o SQL de `supabase/schema.sql` no editor SQL.
+2. No back-end (Render), defina `DATABASE_URL` com a connection string do Supabase (Pooler).
+3. Instale a dependência: `npm install pg` (já adicionada ao `package.json`).
+4. Em `src/index.js`, substitua `require('./db')` por `require('./db.supabase')` — o adaptador `db.supabase.js` expõe a mesma API de operações, mas assíncrona (`pg`).
+5. Se não quiser migrar agora, continue com SQLite + disco persistente no Render.
+
+### Login demo (após o deploy)
+- `admin/admin123` (admin), `regional/reg123` (regional), `operador/op123` (operador), `viewer/view123` (somente leitura).

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: saas-leds-api
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 3001
+      - key: SEED
+        value: "true"
+      - key: HOJE
+        value: ""
+    disk:
+      name: led-data
+      mountPath: /data
+      sizeGB: 1
+    healthCheckPath: /api/health
