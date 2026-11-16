@@ -60,7 +60,7 @@ const server = app.listen(0, async () => {
     // dashboard separa a vencer (fim) de a iniciar (início)
     assert.ok(dash.a_vencer_lista.every((a) => a.status === 'A vencer'), 'a vencer só vencimento');
     assert.ok((dash.a_iniciar_lista || []).every((a) => a.status === 'Agendada'), 'a iniciar só agendadas');
-    assert.ok((dash.a_iniciar_lista || []).some((a) => a.anunciante === 'Rede Primavera'), 'Rede Primavera em a iniciar');
+    assert.ok((dash.a_iniciar_lista || []).some((a) => a.anunciante === 'Boticário'), 'Boticário em a iniciar');
     // importação de planilha no padrão Cidade;LED;Anunciante;Início;Fim
     const imp = await (await fetch(base + '/api/import/planilha', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + login.token },

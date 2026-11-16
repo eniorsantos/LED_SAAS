@@ -10,7 +10,8 @@
     "dev": "node src/index.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "test": "node test/smoke.js"
+    "test": "node test/smoke.js",
+    "test:unit": "node test/unit.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

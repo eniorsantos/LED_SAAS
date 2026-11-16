@@ -3,7 +3,9 @@ function getConfig(db) {
   return db.prepare('SELECT * FROM config WHERE id = 1').get();
 }
 function normalizarAnunciante(s) {
-  return String(s || '').trim().replace(/\s+/g, ' ');
+  return String(s || '')
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 function diasEntre(aISO, bISO) {
   return Math.round((new Date(aISO + 'T12:00:00') - new Date(bISO + 'T12:00:00')) / 86400000);
@@ -13,13 +15,33 @@ function diasEntre(aISO, bISO) {
 // toasts mortos reaparecem para sempre, ignorando o agrupamento)
 function podarNotificacoesOrfas(db) {
   let apagadas = 0;
-  const idsCamp = new Set(db.prepare('SELECT id FROM campanhas').all().map((r) => r.id));
-  const idsRes = new Set(db.prepare('SELECT id FROM reservas').all().map((r) => r.id));
+  const idsCamp = new Set(
+    db
+      .prepare('SELECT id FROM campanhas')
+      .all()
+      .map((r) => r.id),
+  );
+  const idsRes = new Set(
+    db
+      .prepare('SELECT id FROM reservas')
+      .all()
+      .map((r) => r.id),
+  );
   const vivas = (anu, data, deReserva) => {
     if (deReserva)
-      return db.prepare(`SELECT COUNT(*) v FROM reservas r JOIN campanhas c ON c.id = r.campanha_id
-        WHERE r.inicio = ? AND (r.anunciante = ? OR (r.anunciante = '' AND c.anunciante = ?))`).get(data, anu, anu).v > 0;
-    return db.prepare('SELECT COUNT(*) v FROM campanhas WHERE anunciante = ? AND inicio = ?').get(anu, data).v > 0;
+      return (
+        db
+          .prepare(
+            `SELECT COUNT(*) v FROM reservas r JOIN campanhas c ON c.id = r.campanha_id
+        WHERE r.inicio = ? AND (r.anunciante = ? OR (r.anunciante = '' AND c.anunciante = ?))`,
+          )
+          .get(data, anu, anu).v > 0
+      );
+    return (
+      db
+        .prepare('SELECT COUNT(*) v FROM campanhas WHERE anunciante = ? AND inicio = ?')
+        .get(anu, data).v > 0
+    );
   };
   for (const n of db.prepare('SELECT id, campanha_id, evento FROM notificacoes').all()) {
     const cid = n.campanha_id;
@@ -37,14 +59,44 @@ function hojeISO() {
   const off = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - off).toISOString().slice(0, 10); // data local real
 }
-const MESES_PT_LONGO = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const MESES_PT_CURTO = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const MESES_PT_LONGO = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+const MESES_PT_CURTO = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+];
 // Período de referência = mês do "hoje" (antes era Out-2026 fixo do mockup)
 function periodoReferencia(hoje = hojeISO()) {
   const [y, m] = hoje.split('-').map(Number);
   const ini = `${hoje.slice(0, 7)}-01`;
   const fimDia = new Date(y, m, 0).getDate();
-  return { ini, fim: `${hoje.slice(0, 7)}-${String(fimDia).padStart(2, '0')}`, rotulo: `${MESES_PT_LONGO[m - 1]} ${y}` };
+  return {
+    ini,
+    fim: `${hoje.slice(0, 7)}-${String(fimDia).padStart(2, '0')}`,
+    rotulo: `${MESES_PT_LONGO[m - 1]} ${y}`,
+  };
 }
 // Últimos 6 meses até o "hoje": [{mes:'Abr', ini, fim}] p/ evolução mensal
 function ultimos6Meses(hoje = hojeISO()) {
@@ -52,7 +104,8 @@ function ultimos6Meses(hoje = hojeISO()) {
   const out = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(y0, m0 - 1 - i, 1);
-    const y = d.getFullYear(), m = d.getMonth() + 1;
+    const y = d.getFullYear(),
+      m = d.getMonth() + 1;
     const ini = `${y}-${String(m).padStart(2, '0')}-01`;
     const fim = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
     out.push({ mes: MESES_PT_CURTO[m - 1], ini, fim });
@@ -66,12 +119,13 @@ function ultimos6Meses(hoje = hojeISO()) {
 function statusCampanha(c, cfg, hoje = hojeISO()) {
   if (c.fim < hoje) return 'vencida';
   if (c.inicio > hoje)
-    return diasEntre(c.inicio, hoje) <= cfg.n_inicio_proximo ? 'agendada' : 'reservada';
+    return diasEntre(c.inicio, hoje) <= cfg.n_inicio_proximo ? 'reservada' : 'agendada';
   return diasEntre(c.fim, hoje) <= cfg.n_vencimento_proximo ? 'a_vencer' : 'veiculando';
 }
 // Ocupação (%) = dias contratados no período ÷ dias totais do período (spec §4.3)
 function ocupacao(campanhas, pIni, pFim) {
-  const t0 = new Date(pIni + 'T12:00:00').getTime(), t1 = new Date(pFim + 'T12:00:00').getTime();
+  const t0 = new Date(pIni + 'T12:00:00').getTime(),
+    t1 = new Date(pFim + 'T12:00:00').getTime();
   const total = Math.max(1, Math.round((t1 - t0) / 86400000) + 1);
   const dias = new Set();
   for (const c of campanhas) {
@@ -79,7 +133,7 @@ function ocupacao(campanhas, pIni, pFim) {
     const b = Math.min(t1, new Date(c.fim + 'T12:00:00').getTime());
     for (let t = a; t <= b; t += 86400000) dias.add(new Date(t).toISOString().slice(0, 10));
   }
-  return +(Math.min(100, (dias.size / total) * 100).toFixed(1));
+  return +Math.min(100, (dias.size / total) * 100).toFixed(1);
 }
 function validarDataISO(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false; // barra "31/9" inválida (§1)
@@ -93,7 +147,8 @@ function validarDataISO(s) {
 // único toast (corpo lista os LEDs); o id sintético `grupo:<evento>:<anu>:<data>`
 // mantém a anti-duplicidade por grupo/dia.
 function varreduraNotificacoes(db) {
-  const cfg = getConfig(db), hoje = hojeISO();
+  const cfg = getConfig(db),
+    hoje = hojeISO();
   const grupos = new Map();
   const push = (key, g) => {
     if (!grupos.has(key)) grupos.set(key, { ...g, leds: [], dias: [] });
@@ -103,40 +158,63 @@ function varreduraNotificacoes(db) {
   };
   const notificar = (campanhaId, evento, titulo, corpo, cidadeId) => {
     try {
-      db.prepare(`INSERT INTO notificacoes (campanha_id,evento,titulo,corpo,dia,cidade_id) VALUES (?,?,?,?,?,?)`)
-        .run(campanhaId, evento, titulo, corpo, hoje, cidadeId || '');
+      db.prepare(
+        `INSERT INTO notificacoes (campanha_id,evento,titulo,corpo,dia,cidade_id) VALUES (?,?,?,?,?,?)`,
+      ).run(campanhaId, evento, titulo, corpo, hoje, cidadeId || '');
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   };
   const camps = db.prepare('SELECT * FROM campanhas').all();
   for (const c of camps) {
     const anu = normalizarAnunciante(c.anunciante);
-    const dFim = diasEntre(c.fim, hoje), dIni = diasEntre(c.inicio, hoje);
+    const dFim = diasEntre(c.fim, hoje),
+      dIni = diasEntre(c.inicio, hoje);
     if (dFim >= 0 && dFim <= cfg.n_vencimento_proximo && c.inicio <= hoje)
       push(`venc||${anu}||${c.inicio}`, {
-        campanhaId: `grupo:venc:${anu}:${c.inicio}`, evento: 'vencimento',
-        titulo: `⚠ Vencimento próximo`, anunciante: anu, tipo: 'venc',
-        led: c.led_codigo, dias: dFim, cidade: c.cidade_id,
+        campanhaId: `grupo:venc:${anu}:${c.inicio}`,
+        evento: 'vencimento',
+        titulo: `⚠ Vencimento próximo`,
+        anunciante: anu,
+        tipo: 'venc',
+        led: c.led_codigo,
+        dias: dFim,
+        cidade: c.cidade_id,
       });
     if (dIni >= 0 && dIni <= cfg.n_inicio_proximo && c.inicio > hoje)
       push(`ini||${anu}||${c.inicio}`, {
-        campanhaId: `grupo:ini:${anu}:${c.inicio}`, evento: 'inicio',
-        titulo: `🔔 Início próximo`, anunciante: anu, tipo: 'ini',
-        led: c.led_codigo, dias: dIni, cidade: c.cidade_id,
+        campanhaId: `grupo:ini:${anu}:${c.inicio}`,
+        evento: 'inicio',
+        titulo: `🔔 Início próximo`,
+        anunciante: anu,
+        tipo: 'ini',
+        led: c.led_codigo,
+        dias: dIni,
+        cidade: c.cidade_id,
       });
   }
   // Reservas: cada (anunciante, início) gera seu próprio grupo
-  const reservas = db.prepare(`
+  const reservas = db
+    .prepare(
+      `
     SELECT r.*, c.anunciante AS camp_anunciante, c.led_codigo, c.cidade_id FROM reservas r
-    JOIN campanhas c ON c.id = r.campanha_id`).all();
+    JOIN campanhas c ON c.id = r.campanha_id`,
+    )
+    .all();
   for (const r of reservas) {
     const dIni = diasEntre(r.inicio, hoje);
     const anu = normalizarAnunciante(r.anunciante || r.camp_anunciante);
     if (dIni >= 0 && dIni <= cfg.n_inicio_proximo)
       push(`res||${anu}||${r.inicio}`, {
-        campanhaId: `grupo:res:${anu}:${r.inicio}`, evento: 'inicio',
-        titulo: `🔔 Reserva próxima`, anunciante: anu, tipo: 'res',
-        led: r.led_codigo, dias: dIni, cidade: r.cidade_id,
+        campanhaId: `grupo:res:${anu}:${r.inicio}`,
+        evento: 'inicio',
+        titulo: `🔔 Reserva próxima`,
+        anunciante: anu,
+        tipo: 'res',
+        led: r.led_codigo,
+        dias: dIni,
+        cidade: r.cidade_id,
       });
   }
   let criadas = 0;
@@ -149,8 +227,7 @@ function varreduraNotificacoes(db) {
       corpo = `${g.anunciante} · ${g.leds.map((l, i) => `${l} em ${g.dias[i]} dias`).join('; ')}`;
     else if (g.tipo === 'res')
       corpo = `Reserva de ${g.anunciante} inicia em ${g.dias[0]} dias · ${leds}`;
-    else
-      corpo = `${g.anunciante} inicia em ${g.dias[0]} dias · ${leds}`;
+    else corpo = `${g.anunciante} inicia em ${g.dias[0]} dias · ${leds}`;
     if (g.leds.length > 1) corpo += ` (${g.leds.length} painéis)`;
     if (notificar(g.campanhaId, g.evento, g.titulo, corpo, g.cidade)) criadas++;
   }
@@ -168,11 +245,17 @@ function horarioParaSegundos(hhmm) {
   return h * 3600 + m * 60;
 }
 function intervalosSobrepostos(aIni, aDur, bIni, bDur) {
-  const aFim = aIni + aDur, bFim = bIni + bDur;
+  const aFim = aIni + aDur,
+    bFim = bIni + bDur;
   return aIni < bFim && bIni < aFim;
 }
 function diasSet(s) {
-  return new Set(String(s || '').split(',').map((x) => x.trim()).filter(Boolean));
+  return new Set(
+    String(s || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+  );
 }
 function acharChoqueGrade(existentes, novo) {
   const nIni = horarioParaSegundos(novo.horario_inicio);
@@ -181,7 +264,14 @@ function acharChoqueGrade(existentes, novo) {
     const eDias = diasSet(e.dias_semana);
     const diaComum = [...nDias].some((d) => eDias.has(d));
     if (!diaComum) continue;
-    if (intervalosSobrepostos(nIni, Number(novo.duracao_segundos), horarioParaSegundos(e.horario_inicio), Number(e.duracao_segundos)))
+    if (
+      intervalosSobrepostos(
+        nIni,
+        Number(novo.duracao_segundos),
+        horarioParaSegundos(e.horario_inicio),
+        Number(e.duracao_segundos),
+      )
+    )
       return e;
   }
   return null;
@@ -191,7 +281,30 @@ function acharChoqueGrade(existentes, novo) {
 function espacosUsados(db, ledCodigo, hoje = hojeISO(), excetoId = null) {
   let sql = 'SELECT DISTINCT anunciante FROM campanhas WHERE led_codigo = ? AND fim >= ?';
   const args = [ledCodigo, hoje];
-  if (excetoId) { sql += ' AND id != ?'; args.push(excetoId); }
-  return db.prepare(sql).all(...args).map((r) => r.anunciante);
+  if (excetoId) {
+    sql += ' AND id != ?';
+    args.push(excetoId);
+  }
+  return db
+    .prepare(sql)
+    .all(...args)
+    .map((r) => r.anunciante);
 }
-module.exports = { getConfig, hojeISO, periodoReferencia, ultimos6Meses, diasEntre, normalizarAnunciante, podarNotificacoesOrfas, statusCampanha, ocupacao, validarDataISO, varreduraNotificacoes, validarHorario, horarioParaSegundos, intervalosSobrepostos, acharChoqueGrade, espacosUsados };
+module.exports = {
+  getConfig,
+  hojeISO,
+  periodoReferencia,
+  ultimos6Meses,
+  diasEntre,
+  normalizarAnunciante,
+  podarNotificacoesOrfas,
+  statusCampanha,
+  ocupacao,
+  validarDataISO,
+  varreduraNotificacoes,
+  validarHorario,
+  horarioParaSegundos,
+  intervalosSobrepostos,
+  acharChoqueGrade,
+  espacosUsados,
+};
