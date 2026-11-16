@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./swagger');
 const XLSX = require('xlsx');
 const db = require('./db');
 const R = require('./regras');
@@ -23,7 +25,12 @@ const loginAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
 function rateLimitLogin(req, res, next) {
-  const ip = (req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown').toString();
+  const ip = (
+    req.ip ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    'unknown'
+  ).toString();
   const now = Date.now();
   const record = loginAttempts.get(ip) || { count: 0, resetAt: now + LOGIN_WINDOW_MS };
   if (now > record.resetAt) {
@@ -31,7 +38,9 @@ function rateLimitLogin(req, res, next) {
     record.resetAt = now + LOGIN_WINDOW_MS;
   }
   if (record.count >= LOGIN_MAX_ATTEMPTS) {
-    return res.status(429).json({ erro: 'muitas tentativas de login — tente novamente em 15 minutos' });
+    return res
+      .status(429)
+      .json({ erro: 'muitas tentativas de login — tente novamente em 15 minutos' });
   }
   record.count++;
   loginAttempts.set(ip, record);
@@ -46,11 +55,18 @@ function auth(required = true) {
   return (req, res, next) => {
     const h = req.headers.authorization || '';
     if (!h.startsWith('Bearer ')) {
-      if (!required) { req.user = null; return next(); }
+      if (!required) {
+        req.user = null;
+        return next();
+      }
       return res.status(401).json({ erro: 'não autenticado' });
     }
-    try { req.user = jwt.verify(h.slice(7), JWT_SECRET); next(); }
-    catch { return res.status(401).json({ erro: 'token inválido' }); }
+    try {
+      req.user = jwt.verify(h.slice(7), JWT_SECRET);
+      next();
+    } catch {
+      return res.status(401).json({ erro: 'token inválido' });
+    }
   };
 }
 const podeEditar = (req, res, next) => {
@@ -81,12 +97,37 @@ const RECURSOS = [
 ];
 const PERFIL_DEFAULT = {
   admin: RECURSOS.map((r) => r.id),
-  regional: ['dashboard', 'planilha', 'graficos', 'leds', 'cidades', 'campanhas_editar', 'reservas', 'relatorios', 'importar', 'exportar', 'notificacoes'],
-  operador: ['dashboard', 'planilha', 'graficos', 'leds', 'cidades', 'campanhas_editar', 'reservas', 'relatorios', 'notificacoes'],
+  regional: [
+    'dashboard',
+    'planilha',
+    'graficos',
+    'leds',
+    'cidades',
+    'campanhas_editar',
+    'reservas',
+    'relatorios',
+    'importar',
+    'exportar',
+    'notificacoes',
+  ],
+  operador: [
+    'dashboard',
+    'planilha',
+    'graficos',
+    'leds',
+    'cidades',
+    'campanhas_editar',
+    'reservas',
+    'relatorios',
+    'notificacoes',
+  ],
   visualizador: ['dashboard', 'planilha', 'graficos', 'notificacoes'],
 };
 function permissoesEfetivas(login, perfil) {
-  const extras = db.prepare('SELECT recurso FROM permissoes WHERE login = ?').all(login).map((r) => r.recurso);
+  const extras = db
+    .prepare('SELECT recurso FROM permissoes WHERE login = ?')
+    .all(login)
+    .map((r) => r.recurso);
   return [...new Set([...(PERFIL_DEFAULT[perfil] || []), ...extras])];
 }
 function temAcesso(user, recurso) {
@@ -105,13 +146,20 @@ function authOpcional(req, _res, next) {
   const q = req.query.token || '';
   const tok = h.startsWith('Bearer ') ? h.slice(7) : q;
   if (tok) {
-    try { req.user = jwt.verify(tok, JWT_SECRET); } catch { req.user = null; }
+    try {
+      req.user = jwt.verify(tok, JWT_SECRET);
+    } catch {
+      req.user = null;
+    }
   } else req.user = null;
   next();
 }
 function cidadesPermitidas(user) {
   if (!user || user.perfil === 'admin') return null;
-  const vinc = db.prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?').all(user.login).map((r) => r.cidade_id);
+  const vinc = db
+    .prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?')
+    .all(user.login)
+    .map((r) => r.cidade_id);
   return vinc.length ? vinc : null; // sem vínculo = todas (comportamento atual)
 }
 function filtroEfetivo(req) {
@@ -126,7 +174,10 @@ function filtroEfetivo(req) {
 // cidades (vale para campanhas, reservas, LEDs e spots — por ID ou por payload)
 function escopoCidadeOk(user, cidadeId) {
   if (!user || user.perfil === 'admin') return true;
-  const vinc = db.prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?').all(user.login).map((r) => r.cidade_id);
+  const vinc = db
+    .prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?')
+    .all(user.login)
+    .map((r) => r.cidade_id);
   return vinc.length === 0 || vinc.includes(cidadeId);
 }
 const ERRO_ESCOPO = 'fora do seu escopo de cidades';
@@ -137,19 +188,23 @@ function cidadeDoLed(ledCodigo) {
 // Total de espaços do LED: individual ou padrão global (max_clientes_por_led)
 function espacosTotalLed(ledCodigo, cfg) {
   const l = db.prepare('SELECT espacos_total FROM leds WHERE codigo = ?').get(ledCodigo);
-  return (l && Number.isInteger(l.espacos_total) && l.espacos_total > 0) ? l.espacos_total : cfg.max_clientes_por_led;
+  return l && Number.isInteger(l.espacos_total) && l.espacos_total > 0
+    ? l.espacos_total
+    : cfg.max_clientes_por_led;
 }
 
 app.post('/api/auth/login', rateLimitLogin, (req, res) => {
   const { login, senha } = req.body || {};
   const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(login);
   if (!u) return res.status(401).json({ erro: 'credenciais inválidas' });
-  let senhaValida = false;
+  let senhaValida;
   try {
     senhaValida = u.senha.startsWith('$2b$')
       ? bcrypt.compareSync(senha, u.senha)
-      : (u.senha === senha);
-  } catch { senhaValida = (u.senha === senha); }
+      : u.senha === senha;
+  } catch {
+    senhaValida = u.senha === senha;
+  }
   if (!senhaValida) return res.status(401).json({ erro: 'credenciais inválidas' });
   // Migração transparente: se a senha ainda está em texto plano, reescreve com hash
   if (!u.senha.startsWith('$2b$')) {
@@ -157,7 +212,9 @@ app.post('/api/auth/login', rateLimitLogin, (req, res) => {
     db.prepare('UPDATE usuarios SET senha = ? WHERE login = ?').run(hash, login);
     log(u.login, 'login.password_migrated', u.perfil);
   }
-  const token = jwt.sign({ login: u.login, perfil: u.perfil, nome: u.nome }, JWT_SECRET, { expiresIn: '12h' });
+  const token = jwt.sign({ login: u.login, perfil: u.perfil, nome: u.nome }, JWT_SECRET, {
+    expiresIn: '12h',
+  });
   log(u.login, 'login', u.perfil);
   res.json({ token, perfil: u.perfil, nome: u.nome, login: u.login });
 });
@@ -166,22 +223,35 @@ app.post('/api/auth/login', rateLimitLogin, (req, res) => {
 app.get('/api/config', (req, res) => res.json({ hoje: R.hojeISO(), ...R.getConfig(db) }));
 app.put('/api/config', auth(), requer('config'), (req, res) => {
   const { n_inicio_proximo, n_vencimento_proximo, max_clientes_por_led } = req.body || {};
-  if (max_clientes_por_led !== undefined && (!Number.isInteger(max_clientes_por_led) || max_clientes_por_led < 1))
+  if (
+    max_clientes_por_led !== undefined &&
+    (!Number.isInteger(max_clientes_por_led) || max_clientes_por_led < 1)
+  )
     return res.status(400).json({ erro: 'max_clientes_por_led deve ser inteiro >= 1' });
-  db.prepare('UPDATE config SET n_inicio_proximo = COALESCE(?,n_inicio_proximo), n_vencimento_proximo = COALESCE(?,n_vencimento_proximo), max_clientes_por_led = COALESCE(?,max_clientes_por_led) WHERE id = 1')
-    .run(n_inicio_proximo ?? null, n_vencimento_proximo ?? null, max_clientes_por_led ?? null);
+  db.prepare(
+    'UPDATE config SET n_inicio_proximo = COALESCE(?,n_inicio_proximo), n_vencimento_proximo = COALESCE(?,n_vencimento_proximo), max_clientes_por_led = COALESCE(?,max_clientes_por_led) WHERE id = 1',
+  ).run(n_inicio_proximo ?? null, n_vencimento_proximo ?? null, max_clientes_por_led ?? null);
   log(req.user.login, 'config.update', JSON.stringify(req.body));
   res.json(R.getConfig(db));
 });
 
 // — Cidades (§8.1 CRUD: nome, UF, fuso) —
-app.get('/api/cidades', (req, res) => res.json(db.prepare('SELECT * FROM cidades ORDER BY nome').all()));
+app.get('/api/cidades', (req, res) =>
+  res.json(db.prepare('SELECT * FROM cidades ORDER BY nome').all()),
+);
 app.post('/api/cidades', auth(), requer('cidades'), (req, res) => {
   const { id, nome, uf = '', fuso = 'America/Maceio' } = req.body || {};
   if (!id || !nome) return res.status(400).json({ erro: 'id e nome obrigatórios' });
   try {
-    db.prepare('INSERT INTO cidades (id,nome,uf,fuso) VALUES (?,?,?,?)').run(String(id).trim().toLowerCase(), nome, uf, fuso);
-  } catch { return res.status(409).json({ erro: `cidade "${id}" já cadastrada` }); }
+    db.prepare('INSERT INTO cidades (id,nome,uf,fuso) VALUES (?,?,?,?)').run(
+      String(id).trim().toLowerCase(),
+      nome,
+      uf,
+      fuso,
+    );
+  } catch {
+    return res.status(409).json({ erro: `cidade "${id}" já cadastrada` });
+  }
   log(req.user.login, 'cidade.create', id);
   res.status(201).json({ id, nome, uf, fuso });
 });
@@ -190,7 +260,12 @@ app.put('/api/cidades/:id', auth(), requer('cidades'), (req, res) => {
   if (!cur) return res.status(404).json({ erro: 'cidade não encontrada' });
   const { nome = cur.nome, uf = cur.uf, fuso = cur.fuso } = req.body || {};
   if (!nome) return res.status(400).json({ erro: 'nome obrigatório' });
-  db.prepare('UPDATE cidades SET nome = ?, uf = ?, fuso = ? WHERE id = ?').run(nome, uf, fuso, req.params.id);
+  db.prepare('UPDATE cidades SET nome = ?, uf = ?, fuso = ? WHERE id = ?').run(
+    nome,
+    uf,
+    fuso,
+    req.params.id,
+  );
   log(req.user.login, 'cidade.update', req.params.id);
   res.json({ ok: true });
 });
@@ -198,7 +273,8 @@ app.delete('/api/cidades/:id', auth(), requer('cidades'), (req, res) => {
   const cur = db.prepare('SELECT * FROM cidades WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'cidade não encontrada' });
   const n = db.prepare('SELECT COUNT(*) v FROM leds WHERE cidade_id = ?').get(req.params.id).v;
-  if (n > 0) return res.status(409).json({ erro: `cidade possui ${n} LED(s) — exclua ou transfira antes` });
+  if (n > 0)
+    return res.status(409).json({ erro: `cidade possui ${n} LED(s) — exclua ou transfira antes` });
   db.prepare('DELETE FROM usuario_cidade WHERE cidade_id = ?').run(req.params.id);
   db.prepare('DELETE FROM cidades WHERE id = ?').run(req.params.id);
   log(req.user.login, 'cidade.delete', req.params.id);
@@ -208,66 +284,124 @@ app.delete('/api/cidades/:id', auth(), requer('cidades'), (req, res) => {
 // — LEDs (menu de cadastro: incluir, editar, excluir) —
 app.get('/api/leds', authOpcional, (req, res) => {
   const filtro = filtroEfetivo(req);
-  const cfg = R.getConfig(db), hoje = R.hojeISO();
+  const cfg = R.getConfig(db),
+    hoje = R.hojeISO();
   let rows = db.prepare('SELECT * FROM leds ORDER BY codigo').all();
   if (filtro.length) rows = rows.filter((l) => filtro.includes(l.cidade_id));
-  res.json(rows.map((l) => ({
-    ...l,
-    espacos_usados: R.espacosUsados(db, l.codigo, hoje).length,
-    espacos_total: espacosTotalLed(l.codigo, cfg),
-    espacos_proprio: l.espacos_total ?? null,
-  })));
+  res.json(
+    rows.map((l) => ({
+      ...l,
+      espacos_usados: R.espacosUsados(db, l.codigo, hoje).length,
+      espacos_total: espacosTotalLed(l.codigo, cfg),
+      espacos_proprio: l.espacos_total ?? null,
+    })),
+  );
 });
 app.post('/api/leds', auth(), requer('leds'), (req, res) => {
   const { codigo, endereco, cidade_id, espacos_total } = req.body || {};
-  if (!codigo || !endereco || !cidade_id) return res.status(400).json({ erro: 'codigo, endereco, cidade_id obrigatórios' });
-  if (espacos_total !== undefined && espacos_total !== null && espacos_total !== '' && (!Number.isInteger(espacos_total) || espacos_total < 1))
-    return res.status(400).json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
+  if (!codigo || !endereco || !cidade_id)
+    return res.status(400).json({ erro: 'codigo, endereco, cidade_id obrigatórios' });
+  if (
+    espacos_total !== undefined &&
+    espacos_total !== null &&
+    espacos_total !== '' &&
+    (!Number.isInteger(espacos_total) || espacos_total < 1)
+  )
+    return res
+      .status(400)
+      .json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
   if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id))
     return res.status(400).json({ erro: `cidade "${cidade_id}" não cadastrada` });
-  if (!escopoCidadeOk(req.user, cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
-  const esp = (espacos_total === undefined || espacos_total === null || espacos_total === '') ? null : espacos_total;
+  if (!escopoCidadeOk(req.user, cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
+  const esp =
+    espacos_total === undefined || espacos_total === null || espacos_total === ''
+      ? null
+      : espacos_total;
   try {
-    db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(codigo.trim(), endereco, cidade_id, esp);
-  } catch { return res.status(409).json({ erro: `LED "${codigo}" já cadastrado` }); }
+    db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(
+      codigo.trim(),
+      endereco,
+      cidade_id,
+      esp,
+    );
+  } catch {
+    return res.status(409).json({ erro: `LED "${codigo}" já cadastrado` });
+  }
   log(req.user.login, 'led.create', codigo);
   res.status(201).json({ codigo, endereco, cidade_id, espacos_total: esp });
 });
 app.put('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
   const cur = db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
   if (!cur) return res.status(404).json({ erro: 'LED não encontrado' });
-  const { endereco = cur.endereco, cidade_id = cur.cidade_id, novo_codigo = cur.codigo, espacos_total } = req.body || {};
+  const {
+    endereco = cur.endereco,
+    cidade_id = cur.cidade_id,
+    novo_codigo = cur.codigo,
+    espacos_total,
+  } = req.body || {};
   if (!endereco) return res.status(400).json({ erro: 'endereco obrigatório' });
-  if (espacos_total !== undefined && espacos_total !== null && espacos_total !== '' && (!Number.isInteger(espacos_total) || espacos_total < 1))
-    return res.status(400).json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
+  if (
+    espacos_total !== undefined &&
+    espacos_total !== null &&
+    espacos_total !== '' &&
+    (!Number.isInteger(espacos_total) || espacos_total < 1)
+  )
+    return res
+      .status(400)
+      .json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
   if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id))
     return res.status(400).json({ erro: `cidade "${cidade_id}" não cadastrada` });
   if (!escopoCidadeOk(req.user, cur.cidade_id) || !escopoCidadeOk(req.user, cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
   const renomear = novo_codigo !== cur.codigo;
-  const esp = espacos_total === undefined ? cur.espacos_total : (espacos_total === null || espacos_total === '' ? null : espacos_total);
+  const esp =
+    espacos_total === undefined
+      ? cur.espacos_total
+      : espacos_total === null || espacos_total === ''
+        ? null
+        : espacos_total;
   const tx = db.transaction(() => {
     if (renomear) {
-      db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(novo_codigo, endereco, cidade_id, esp);
-      db.prepare('UPDATE campanhas SET led_codigo = ? WHERE led_codigo = ?').run(novo_codigo, cur.codigo);
-      db.prepare('UPDATE programacoes SET led_codigo = ? WHERE led_codigo = ?').run(novo_codigo, cur.codigo);
+      db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(
+        novo_codigo,
+        endereco,
+        cidade_id,
+        esp,
+      );
+      db.prepare('UPDATE campanhas SET led_codigo = ? WHERE led_codigo = ?').run(
+        novo_codigo,
+        cur.codigo,
+      );
+      db.prepare('UPDATE programacoes SET led_codigo = ? WHERE led_codigo = ?').run(
+        novo_codigo,
+        cur.codigo,
+      );
       db.prepare('DELETE FROM leds WHERE codigo = ?').run(cur.codigo);
     } else {
-      db.prepare('UPDATE leds SET endereco = ?, cidade_id = ?, espacos_total = ? WHERE codigo = ?').run(endereco, cidade_id, esp, cur.codigo);
+      db.prepare(
+        'UPDATE leds SET endereco = ?, cidade_id = ?, espacos_total = ? WHERE codigo = ?',
+      ).run(endereco, cidade_id, esp, cur.codigo);
     }
   });
-  try { tx(); } catch { return res.status(409).json({ erro: `LED "${novo_codigo}" já cadastrado` }); }
+  try {
+    tx();
+  } catch {
+    return res.status(409).json({ erro: `LED "${novo_codigo}" já cadastrado` });
+  }
   log(req.user.login, 'led.update', `${req.params.codigo}${renomear ? ' → ' + novo_codigo : ''}`);
   res.json({ ok: true, codigo: novo_codigo });
 });
 app.delete('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
   const cur = db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
   if (!cur) return res.status(404).json({ erro: 'LED não encontrado' });
-  if (!escopoCidadeOk(req.user, cur.cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
-  const n = db.prepare('SELECT COUNT(*) v FROM campanhas WHERE led_codigo = ?').get(req.params.codigo).v;
-  if (n > 0) return res.status(409).json({ erro: `LED possui ${n} campanha(s) — exclua ou transfira antes` });
+  if (!escopoCidadeOk(req.user, cur.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
+  const n = db
+    .prepare('SELECT COUNT(*) v FROM campanhas WHERE led_codigo = ?')
+    .get(req.params.codigo).v;
+  if (n > 0)
+    return res
+      .status(409)
+      .json({ erro: `LED possui ${n} campanha(s) — exclua ou transfira antes` });
   db.prepare('DELETE FROM programacoes WHERE led_codigo = ?').run(req.params.codigo);
   db.prepare('DELETE FROM leds WHERE codigo = ?').run(req.params.codigo);
   log(req.user.login, 'led.delete', req.params.codigo);
@@ -276,7 +410,8 @@ app.delete('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
 
 // — Anunciantes —
 app.get('/api/anunciantes', (req, res) =>
-  res.json(db.prepare('SELECT * FROM anunciantes ORDER BY nome').all()));
+  res.json(db.prepare('SELECT * FROM anunciantes ORDER BY nome').all()),
+);
 
 // — Campanhas (validação de datas §1: "31/9" inválida) —
 function comStatus(rows) {
@@ -297,44 +432,58 @@ app.post('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
   const { id, cidade_id, led_codigo, inicio, fim, reservada = 0 } = req.body || {};
   const anunciante = R.normalizarAnunciante(req.body?.anunciante);
   if (!id || !cidade_id || !led_codigo || !anunciante || !inicio || !fim)
-    return res.status(400).json({ erro: 'campos obrigatórios: id, cidade_id, led_codigo, anunciante, inicio, fim' });
+    return res
+      .status(400)
+      .json({ erro: 'campos obrigatórios: id, cidade_id, led_codigo, anunciante, inicio, fim' });
   if (!R.validarDataISO(inicio) || !R.validarDataISO(fim))
-    return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido — ex.: 31/9 é inválido)' });
+    return res
+      .status(400)
+      .json({ erro: 'data inválida (use AAAA-MM-DD válido — ex.: 31/9 é inválido)' });
   if (inicio > fim) return res.status(400).json({ erro: 'início posterior ao fim' });
   const ledCidade = cidadeDoLed(led_codigo);
-  if (!ledCidade)
-    return res.status(400).json({ erro: `LED "${led_codigo}" não cadastrado` });
+  if (!ledCidade) return res.status(400).json({ erro: `LED "${led_codigo}" não cadastrado` });
   if (ledCidade !== cidade_id)
-    return res.status(400).json({ erro: `LED ${led_codigo} é de "${ledCidade}", não de "${cidade_id}"` });
-  if (!escopoCidadeOk(req.user, cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+    return res
+      .status(400)
+      .json({ erro: `LED ${led_codigo} é de "${ledCidade}", não de "${cidade_id}"` });
+  if (!escopoCidadeOk(req.user, cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   // Capacidade: cada LED tem seu total de espaços (individual ou padrão global)
-  const cfg = R.getConfig(db), hoje = R.hojeISO();
+  const cfg = R.getConfig(db),
+    hoje = R.hojeISO();
   const usados = R.espacosUsados(db, led_codigo, hoje);
   const totalEsp = espacosTotalLed(led_codigo, cfg);
   if (!usados.includes(anunciante) && usados.length >= totalEsp)
-    return res.status(409).json({ erro: `LED ${led_codigo} lotado: ${usados.length}/${totalEsp} espaços ocupados`, espacos: { usados: usados.length, total: totalEsp } });
+    return res.status(409).json({
+      erro: `LED ${led_codigo} lotado: ${usados.length}/${totalEsp} espaços ocupados`,
+      espacos: { usados: usados.length, total: totalEsp },
+    });
   db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
-  db.prepare('INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)')
-    .run(id, cidade_id, led_codigo, anunciante, inicio, fim, reservada ? 1 : 0);
+  db.prepare(
+    'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
+  ).run(id, cidade_id, led_codigo, anunciante, inicio, fim, reservada ? 1 : 0);
   log(req.user.login, 'campanha.create', id);
   res.status(201).json({ ok: true, id });
 });
-app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => { // edição inline da planilha (§4.4)
+app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => {
+  // edição inline da planilha (§4.4)
   const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'não encontrada' });
   const nx = { ...cur, ...req.body };
-  if (req.body.anunciante !== undefined) nx.anunciante = R.normalizarAnunciante(req.body.anunciante);
-  if (!nx.anunciante)
-    return res.status(400).json({ erro: 'anunciante obrigatório' });
-  if ((req.body.inicio && !R.validarDataISO(nx.inicio)) || (req.body.fim && !R.validarDataISO(nx.fim)))
+  if (req.body.anunciante !== undefined)
+    nx.anunciante = R.normalizarAnunciante(req.body.anunciante);
+  if (!nx.anunciante) return res.status(400).json({ erro: 'anunciante obrigatório' });
+  if (
+    (req.body.inicio && !R.validarDataISO(nx.inicio)) ||
+    (req.body.fim && !R.validarDataISO(nx.fim))
+  )
     return res.status(400).json({ erro: 'data inválida' });
   if (nx.inicio > nx.fim) return res.status(400).json({ erro: 'início posterior ao fim' });
   const nxLedCidade = cidadeDoLed(nx.led_codigo);
-  if (!nxLedCidade)
-    return res.status(400).json({ erro: `LED "${nx.led_codigo}" não cadastrado` });
+  if (!nxLedCidade) return res.status(400).json({ erro: `LED "${nx.led_codigo}" não cadastrado` });
   if (nxLedCidade !== nx.cidade_id)
-    return res.status(400).json({ erro: `LED ${nx.led_codigo} é de "${nxLedCidade}", não de "${nx.cidade_id}"` });
+    return res
+      .status(400)
+      .json({ erro: `LED ${nx.led_codigo} é de "${nxLedCidade}", não de "${nx.cidade_id}"` });
   if (!escopoCidadeOk(req.user, cur.cidade_id) || !escopoCidadeOk(req.user, nx.cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
   // Capacidade ao trocar de LED/anunciante (ignora a própria campanha na contagem)
@@ -343,19 +492,30 @@ app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => 
     const total2 = espacosTotalLed(nx.led_codigo, cfg2);
     const usados = R.espacosUsados(db, nx.led_codigo, R.hojeISO(), req.params.id);
     if (!usados.includes(nx.anunciante) && usados.length >= total2)
-      return res.status(409).json({ erro: `LED ${nx.led_codigo} lotado: ${usados.length}/${total2} espaços ocupados`, espacos: { usados: usados.length, total: total2 } });
+      return res.status(409).json({
+        erro: `LED ${nx.led_codigo} lotado: ${usados.length}/${total2} espaços ocupados`,
+        espacos: { usados: usados.length, total: total2 },
+      });
   }
   db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
-  db.prepare('UPDATE campanhas SET anunciante=?,inicio=?,fim=?,reservada=?,led_codigo=?,cidade_id=? WHERE id=?')
-    .run(nx.anunciante, nx.inicio, nx.fim, nx.reservada ? 1 : 0, nx.led_codigo, nx.cidade_id, req.params.id);
+  db.prepare(
+    'UPDATE campanhas SET anunciante=?,inicio=?,fim=?,reservada=?,led_codigo=?,cidade_id=? WHERE id=?',
+  ).run(
+    nx.anunciante,
+    nx.inicio,
+    nx.fim,
+    nx.reservada ? 1 : 0,
+    nx.led_codigo,
+    nx.cidade_id,
+    req.params.id,
+  );
   log(req.user.login, 'campanha.update', req.params.id);
   res.json({ ok: true });
 });
 app.delete('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => {
   const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'não encontrada' });
-  if (!escopoCidadeOk(req.user, cur.cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+  if (!escopoCidadeOk(req.user, cur.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   db.prepare('DELETE FROM campanhas WHERE id = ?').run(req.params.id);
   log(req.user.login, 'campanha.delete', req.params.id);
   res.json({ ok: true });
@@ -365,23 +525,36 @@ app.delete('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
   const { ids } = req.body || {};
   if (!Array.isArray(ids) || !ids.length)
     return res.status(400).json({ erro: 'envie {ids: [...]}' });
-  const excluidas = [], ignoradas = [];
+  const excluidas = [],
+    ignoradas = [];
   const del = db.prepare('DELETE FROM campanhas WHERE id = ?');
   for (const id of new Set(ids)) {
     const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(id);
-    if (!cur) { ignoradas.push({ id, motivo: 'não encontrada' }); continue; }
-    if (!escopoCidadeOk(req.user, cur.cidade_id)) { ignoradas.push({ id, motivo: ERRO_ESCOPO }); continue; }
+    if (!cur) {
+      ignoradas.push({ id, motivo: 'não encontrada' });
+      continue;
+    }
+    if (!escopoCidadeOk(req.user, cur.cidade_id)) {
+      ignoradas.push({ id, motivo: ERRO_ESCOPO });
+      continue;
+    }
     del.run(id);
     excluidas.push(id);
   }
-  log(req.user.login, 'campanha.delete.lote', `excluidas=${excluidas.length} ids=${excluidas.join(',')}`);
+  log(
+    req.user.login,
+    'campanha.delete.lote',
+    `excluidas=${excluidas.length} ids=${excluidas.join(',')}`,
+  );
   res.json({ excluidas, ignoradas });
 });
 
 // — Reservas múltiplas: cada campanha pode ter N períodos futuros reservados —
 // cada reserva gera seu toast de início próximo na varredura (§4.1)
 function reservasDaCampanha(campanhaId, anunciantePadrao) {
-  return db.prepare('SELECT * FROM reservas WHERE campanha_id = ? ORDER BY inicio').all(campanhaId)
+  return db
+    .prepare('SELECT * FROM reservas WHERE campanha_id = ? ORDER BY inicio')
+    .all(campanhaId)
     .map((r) => ({ ...r, anunciante: r.anunciante || anunciantePadrao || '' }));
 }
 // (rotação: reservas convivem com campanha e entre si — sem checagem de choque)
@@ -396,8 +569,7 @@ app.get('/api/campanhas/:id/reservas', authOpcional, (req, res) => {
 app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), (req, res) => {
   const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!camp) return res.status(404).json({ erro: 'campanha não encontrada' });
-  if (!escopoCidadeOk(req.user, camp.cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+  if (!escopoCidadeOk(req.user, camp.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const { inicio, fim } = req.body || {};
   if (!R.validarDataISO(inicio) || !R.validarDataISO(fim))
     return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido)' });
@@ -406,8 +578,9 @@ app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), (req, res) =
   // rotação: reservas convivem com o período da campanha e entre si (sem checagem de choque)
   const id = 'r' + Date.now();
   db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anu);
-  db.prepare('INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)')
-    .run(id, req.params.id, inicio, fim, anu, req.user.login);
+  db.prepare(
+    'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
+  ).run(id, req.params.id, inicio, fim, anu, req.user.login);
   log(req.user.login, 'reserva.create', `${id} (${anu} ${inicio} → ${fim})`);
   res.status(201).json({ ok: true, id });
 });
@@ -420,12 +593,14 @@ app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
     return res.status(400).json({ erro: 'led_codigo, anunciante, inicio e fim obrigatórios' });
   const ledCidade = cidadeDoLed(led_codigo);
   if (!ledCidade) return res.status(400).json({ erro: `LED "${led_codigo}" não cadastrado` });
-  if (!escopoCidadeOk(req.user, ledCidade))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+  if (!escopoCidadeOk(req.user, ledCidade)) return res.status(403).json({ erro: ERRO_ESCOPO });
   if (!R.validarDataISO(inicio) || !R.validarDataISO(fim))
     return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido)' });
   if (inicio > fim) return res.status(400).json({ erro: 'início posterior ao fim' });
-  let camp = db.prepare('SELECT * FROM campanhas WHERE led_codigo = ? AND anunciante = ? ORDER BY inicio LIMIT 1')
+  let camp = db
+    .prepare(
+      'SELECT * FROM campanhas WHERE led_codigo = ? AND anunciante = ? ORDER BY inicio LIMIT 1',
+    )
     .get(led_codigo, anunciante);
   let campanhaCriada = null;
   if (!camp) {
@@ -433,17 +608,21 @@ app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
     const totalEsp = espacosTotalLed(led_codigo, cfg);
     const usados = R.espacosUsados(db, led_codigo, R.hojeISO());
     if (usados.length >= totalEsp)
-      return res.status(409).json({ erro: `LED ${led_codigo} lotado (${usados.length}/${totalEsp})` });
+      return res
+        .status(409)
+        .json({ erro: `LED ${led_codigo} lotado (${usados.length}/${totalEsp})` });
     campanhaCriada = `c${Date.now()}`;
     db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
-    db.prepare('INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,1)')
-      .run(campanhaCriada, ledCidade, led_codigo, anunciante, inicio, fim);
+    db.prepare(
+      'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,1)',
+    ).run(campanhaCriada, ledCidade, led_codigo, anunciante, inicio, fim);
     log(req.user.login, 'campanha.create.auto', `${campanhaCriada} (${anunciante} ${led_codigo})`);
     camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanhaCriada);
   }
   const id = 'r' + Date.now();
-  db.prepare('INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)')
-    .run(id, camp.id, inicio, fim, anunciante, req.user.login);
+  db.prepare(
+    'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
+  ).run(id, camp.id, inicio, fim, anunciante, req.user.login);
   log(req.user.login, 'reserva.create', `${id} (${anunciante} ${led_codigo} ${inicio} → ${fim})`);
   res.status(201).json({ ok: true, id, campanha_id: camp.id, campanha_criada: campanhaCriada });
 });
@@ -460,14 +639,24 @@ app.delete('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
 // Menu de cadastro: lista global com filtros + edição completa
 app.get('/api/reservas', authOpcional, (req, res) => {
   const filtro = filtroEfetivo(req);
-  const nomes = Object.fromEntries(db.prepare('SELECT id,nome FROM cidades').all().map((c) => [c.id, c.nome]));
-  let rows = db.prepare(`
+  const nomes = Object.fromEntries(
+    db
+      .prepare('SELECT id,nome FROM cidades')
+      .all()
+      .map((c) => [c.id, c.nome]),
+  );
+  let rows = db
+    .prepare(
+      `
     SELECT r.*, c.anunciante AS camp_anunciante, c.led_codigo, c.cidade_id FROM reservas r
-    JOIN campanhas c ON c.id = r.campanha_id ORDER BY r.inicio`).all()
+    JOIN campanhas c ON c.id = r.campanha_id ORDER BY r.inicio`,
+    )
+    .all()
     .map((r) => ({
       ...r,
       anunciante: r.anunciante || r.camp_anunciante,
-      cidade_id: r.cidade_id, cidade_nome: nomes[r.cidade_id] || r.cidade_id,
+      cidade_id: r.cidade_id,
+      cidade_nome: nomes[r.cidade_id] || r.cidade_id,
     }));
   if (filtro.length) rows = rows.filter((r) => filtro.includes(r.cidade_id));
   if (req.query.led) rows = rows.filter((r) => r.led_codigo === req.query.led);
@@ -479,21 +668,31 @@ app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
   if (!cur) return res.status(404).json({ erro: 'reserva não encontrada' });
   const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(cur.campanha_id);
   if (!camp) return res.status(404).json({ erro: 'campanha da reserva não encontrada' });
-  if (!escopoCidadeOk(req.user, camp.cidade_id))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+  if (!escopoCidadeOk(req.user, camp.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const nx = {
     inicio: req.body.inicio || cur.inicio,
     fim: req.body.fim || cur.fim,
-    anunciante: req.body.anunciante !== undefined ? R.normalizarAnunciante(req.body.anunciante) || camp.anunciante : (cur.anunciante || camp.anunciante),
+    anunciante:
+      req.body.anunciante !== undefined
+        ? R.normalizarAnunciante(req.body.anunciante) || camp.anunciante
+        : cur.anunciante || camp.anunciante,
   };
   if (!R.validarDataISO(nx.inicio) || !R.validarDataISO(nx.fim))
     return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido)' });
   if (nx.inicio > nx.fim) return res.status(400).json({ erro: 'início posterior ao fim' });
   // rotação: sem checagem de choque (ver POST)
   db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
-  db.prepare('UPDATE reservas SET inicio = ?, fim = ?, anunciante = ? WHERE id = ?')
-    .run(nx.inicio, nx.fim, nx.anunciante, req.params.id);
-  log(req.user.login, 'reserva.update', `${req.params.id} (${nx.anunciante} ${nx.inicio} → ${nx.fim})`);
+  db.prepare('UPDATE reservas SET inicio = ?, fim = ?, anunciante = ? WHERE id = ?').run(
+    nx.inicio,
+    nx.fim,
+    nx.anunciante,
+    req.params.id,
+  );
+  log(
+    req.user.login,
+    'reserva.update',
+    `${req.params.id} (${nx.anunciante} ${nx.inicio} → ${nx.fim})`,
+  );
   res.json({ ok: true });
 });
 
@@ -501,26 +700,49 @@ app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
 app.get('/api/programacoes', authOpcional, (req, res) => {
   const { led, campanha } = req.query;
   const filtro = filtroEfetivo(req);
-  let sql = 'SELECT * FROM programacoes ORDER BY horario_inicio', args = [];
-  if (led) { sql = 'SELECT * FROM programacoes WHERE led_codigo = ? ORDER BY horario_inicio'; args = [led]; }
-  if (campanha) { sql = 'SELECT * FROM programacoes WHERE campanha_id = ? ORDER BY horario_inicio'; args = [campanha]; }
+  let sql = 'SELECT * FROM programacoes ORDER BY horario_inicio',
+    args = [];
+  if (led) {
+    sql = 'SELECT * FROM programacoes WHERE led_codigo = ? ORDER BY horario_inicio';
+    args = [led];
+  }
+  if (campanha) {
+    sql = 'SELECT * FROM programacoes WHERE campanha_id = ? ORDER BY horario_inicio';
+    args = [campanha];
+  }
   let rows = db.prepare(sql).all(...args);
   if (filtro.length) {
-    const cid = Object.fromEntries(db.prepare('SELECT codigo,cidade_id FROM leds').all().map((l) => [l.codigo, l.cidade_id]));
+    const cid = Object.fromEntries(
+      db
+        .prepare('SELECT codigo,cidade_id FROM leds')
+        .all()
+        .map((l) => [l.codigo, l.cidade_id]),
+    );
     rows = rows.filter((r) => filtro.includes(cid[r.led_codigo]));
   }
   res.json(rows);
 });
 app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
-  const { id, campanha_id, led_codigo, horario_inicio, duracao_segundos = 15, dias_semana = 'SEG', insercoes_dia = 1, autorizacao_admin = false, motivo_autorizacao = '' } = req.body || {};
+  const {
+    id,
+    campanha_id,
+    led_codigo,
+    horario_inicio,
+    duracao_segundos = 15,
+    dias_semana = 'SEG',
+    insercoes_dia = 1,
+    autorizacao_admin = false,
+    motivo_autorizacao = '',
+  } = req.body || {};
   if (!id || !campanha_id || !led_codigo || !horario_inicio)
-    return res.status(400).json({ erro: 'id, campanha_id, led_codigo, horario_inicio obrigatórios' });
+    return res
+      .status(400)
+      .json({ erro: 'id, campanha_id, led_codigo, horario_inicio obrigatórios' });
   const ledCidade = cidadeDoLed(led_codigo);
   if (!ledCidade) return res.status(400).json({ erro: `LED "${led_codigo}" não cadastrado` });
   if (!db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanha_id))
     return res.status(400).json({ erro: `campanha "${campanha_id}" não encontrada` });
-  if (!escopoCidadeOk(req.user, ledCidade))
-    return res.status(403).json({ erro: ERRO_ESCOPO });
+  if (!escopoCidadeOk(req.user, ledCidade)) return res.status(403).json({ erro: ERRO_ESCOPO });
   if (!R.validarHorario(horario_inicio))
     return res.status(400).json({ erro: 'horário inválido (use HH:MM de 00:00 a 23:59)' });
   if (!Number.isFinite(Number(duracao_segundos)) || Number(duracao_segundos) <= 0)
@@ -528,22 +750,58 @@ app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
   if (!Number.isFinite(Number(insercoes_dia)) || Number(insercoes_dia) < 1)
     return res.status(400).json({ erro: 'insercoes_dia deve ser >= 1' });
   const existentes = db.prepare('SELECT * FROM programacoes WHERE led_codigo = ?').all(led_codigo);
-  const choque = R.acharChoqueGrade(existentes, { horario_inicio, duracao_segundos: Number(duracao_segundos), dias_semana });
+  const choque = R.acharChoqueGrade(existentes, {
+    horario_inicio,
+    duracao_segundos: Number(duracao_segundos),
+    dias_semana,
+  });
   if (choque) {
     const eIni = choque.horario_inicio;
     const detalhe = `sobreposição: ${led_codigo} ${dias_semana} ${horario_inicio} conflita com "${choque.campanha_id}" às ${eIni} (${choque.duracao_segundos}s)`;
     const ehAdmin = req.user?.perfil === 'admin';
     if (!ehAdmin)
-      return res.status(403).json({ erro: detalhe + ' — sobreposição exige autorização de um usuário admin.', choque, requer_autorizacao_admin: true });
+      return res.status(403).json({
+        erro: detalhe + ' — sobreposição exige autorização de um usuário admin.',
+        choque,
+        requer_autorizacao_admin: true,
+      });
     if (autorizacao_admin !== true)
-      return res.status(409).json({ erro: detalhe + ' — confirme com autorizacao_admin:true e motivo (somente admin).', choque, requer_autorizacao_admin: true });
-    db.prepare('INSERT INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia,autorizado_por,motivo_autorizacao) VALUES (?,?,?,?,?,?,?,?,?)')
-      .run(id, campanha_id, led_codigo, horario_inicio, Number(duracao_segundos), dias_semana, insercoes_dia, req.user.login, String(motivo_autorizacao || ''));
-    log(req.user.login, 'programacao.create.autorizada', `${id} sobre ${choque.id} (${choque.campanha_id}@${eIni}) motivo=${motivo_autorizacao || '-'}`);
+      return res.status(409).json({
+        erro: detalhe + ' — confirme com autorizacao_admin:true e motivo (somente admin).',
+        choque,
+        requer_autorizacao_admin: true,
+      });
+    db.prepare(
+      'INSERT INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia,autorizado_por,motivo_autorizacao) VALUES (?,?,?,?,?,?,?,?,?)',
+    ).run(
+      id,
+      campanha_id,
+      led_codigo,
+      horario_inicio,
+      Number(duracao_segundos),
+      dias_semana,
+      insercoes_dia,
+      req.user.login,
+      String(motivo_autorizacao || ''),
+    );
+    log(
+      req.user.login,
+      'programacao.create.autorizada',
+      `${id} sobre ${choque.id} (${choque.campanha_id}@${eIni}) motivo=${motivo_autorizacao || '-'}`,
+    );
     return res.status(201).json({ ok: true, id, autorizada_por: req.user.login });
   }
-  db.prepare('INSERT INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia) VALUES (?,?,?,?,?,?,?)')
-    .run(id, campanha_id, led_codigo, horario_inicio, Number(duracao_segundos), dias_semana, insercoes_dia);
+  db.prepare(
+    'INSERT INTO programacoes (id,campanha_id,led_codigo,horario_inicio,duracao_segundos,dias_semana,insercoes_dia) VALUES (?,?,?,?,?,?,?)',
+  ).run(
+    id,
+    campanha_id,
+    led_codigo,
+    horario_inicio,
+    Number(duracao_segundos),
+    dias_semana,
+    insercoes_dia,
+  );
   log(req.user.login, 'programacao.create', id);
   res.status(201).json({ ok: true, id });
 });
@@ -555,25 +813,47 @@ app.get('/api/dashboard', authOpcional, (req, res) => {
   const escopo = (c) => filtro.length === 0 || filtro.includes(c.cidade_id);
   const camps = db.prepare('SELECT * FROM campanhas').all().filter(escopo);
   const totalLeds = db.prepare('SELECT COUNT(*) v FROM leds').get().v;
-  const leds = db.prepare('SELECT * FROM leds').all().filter((l) => filtro.length === 0 || filtro.includes(l.cidade_id));
+  const leds = db
+    .prepare('SELECT * FROM leds')
+    .all()
+    .filter((l) => filtro.length === 0 || filtro.includes(l.cidade_id));
   const comSt = camps.map((c) => ({ ...c, status: R.statusCampanha(c, cfg) }));
   const { ini: P_INI, fim: P_FIM, rotulo: PERIODO } = R.periodoReferencia(R.hojeISO());
-  const porLed = leds.map((l) => R.ocupacao(camps.filter((c) => c.led_codigo === l.codigo), P_INI, P_FIM));
-  const ocupMedia = porLed.length ? +(porLed.reduce((a, b) => a + b, 0) / porLed.length).toFixed(1) : 0;
+  const porLed = leds.map((l) =>
+    R.ocupacao(
+      camps.filter((c) => c.led_codigo === l.codigo),
+      P_INI,
+      P_FIM,
+    ),
+  );
+  const ocupMedia = porLed.length
+    ? +(porLed.reduce((a, b) => a + b, 0) / porLed.length).toFixed(1)
+    : 0;
   // LEDs a vencer: painéis distintos com alguma campanha vencendo em 0–7 dias
   // (antes contava campanhas — um LED com 3 vencimentos valia 3)
-  const aVencer = new Set(comSt
-    .filter((c) => { const d = R.diasEntre(c.fim, R.hojeISO()); return d >= 0 && d <= 7 && c.inicio <= R.hojeISO(); })
-    .map((c) => c.led_codigo)).size;
+  const aVencer = new Set(
+    comSt
+      .filter((c) => {
+        const d = R.diasEntre(c.fim, R.hojeISO());
+        return d >= 0 && d <= 7 && c.inicio <= R.hojeISO();
+      })
+      .map((c) => c.led_codigo),
+  ).size;
   // Disponibilidade = ESPAÇOS livres (total individual ou padrão por LED)
   const livres = leds.reduce((acc, l) => {
-    const usados = new Set(comSt.filter((c) => c.led_codigo === l.codigo && c.status !== 'vencida').map((c) => c.anunciante)).size;
+    const usados = new Set(
+      comSt
+        .filter((c) => c.led_codigo === l.codigo && c.status !== 'vencida')
+        .map((c) => c.anunciante),
+    ).size;
     return acc + Math.max(0, espacosTotalLed(l.codigo, cfg) - usados);
   }, 0);
   const totalEspacos = leds.reduce((acc, l) => acc + espacosTotalLed(l.codigo, cfg), 0);
   const tema = temaVars();
   // Rosca de inventário: slots veiculando vs. reservados vs. livres (coerente com o KPI)
-  let sV = 0, sR = 0, sL = livres;
+  let sV = 0,
+    sR = 0,
+    sL = livres;
   for (const l of leds) {
     const porAnu = new Map();
     for (const c of comSt.filter((cc) => cc.led_codigo === l.codigo && cc.status !== 'vencida')) {
@@ -585,51 +865,107 @@ app.get('/api/dashboard', authOpcional, (req, res) => {
   }
   const totDist = Math.max(1, sV + sR + sL);
   const pct = (n) => Math.round((n / totDist) * 100);
-  const distV = [{ name: 'Veiculando', value: pct(sV), color: tema.teal },
+  const distV = [
+    { name: 'Veiculando', value: pct(sV), color: tema.teal },
     { name: 'Reservada', value: pct(sR), color: tema.purple },
-    { name: 'Livre', value: 0, color: tema.border }];
+    { name: 'Livre', value: 0, color: tema.border },
+  ];
   distV[2].value = Math.max(0, 100 - distV[0].value - distV[1].value);
-  const cidades = db.prepare('SELECT * FROM cidades').all()
+  const cidades = db
+    .prepare('SELECT * FROM cidades')
+    .all()
     .filter((c) => filtro.length === 0 || filtro.includes(c.id));
   res.json({
-    hoje: R.hojeISO(), periodo: PERIODO,
-    kpis: { ocupacao_media: ocupMedia, leds_ativos: `${leds.length}/${totalLeds}`, a_vencer_7d: aVencer, livres, espacos_total: totalEspacos },
+    hoje: R.hojeISO(),
+    periodo: PERIODO,
+    kpis: {
+      ocupacao_media: ocupMedia,
+      leds_ativos: `${leds.length}/${totalLeds}`,
+      a_vencer_7d: aVencer,
+      livres,
+      espacos_total: totalEspacos,
+    },
     distribuicao: distV,
     evolucao_mensal: R.ultimos6Meses(R.hojeISO()).map(({ mes, ini, fim }) => {
-      const vals = leds.map((l) => R.ocupacao(camps.filter((c) => c.led_codigo === l.codigo), ini, fim));
-      return { mes, ocupacao: vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : 0 };
+      const vals = leds.map((l) =>
+        R.ocupacao(
+          camps.filter((c) => c.led_codigo === l.codigo),
+          ini,
+          fim,
+        ),
+      );
+      return {
+        mes,
+        ocupacao: vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : 0,
+      };
     }),
     ocupacao_por_cidade: cidades.map((c) => {
       // Inventário comprometido: anunciantes não-vencidas ÷ total individual do LED
       const ledsC = leds.filter((l) => l.cidade_id === c.id);
       const vals = ledsC.map((l) => {
-        const usados = new Set(comSt.filter((cc) => cc.led_codigo === l.codigo && cc.status !== 'vencida').map((cc) => cc.anunciante)).size;
+        const usados = new Set(
+          comSt
+            .filter((cc) => cc.led_codigo === l.codigo && cc.status !== 'vencida')
+            .map((cc) => cc.anunciante),
+        ).size;
         const tot = espacosTotalLed(l.codigo, cfg);
-        return tot ? +(usados / tot * 100).toFixed(1) : 0;
+        return tot ? +((usados / tot) * 100).toFixed(1) : 0;
       });
       const media = vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : 0;
       return { cidade: c.nome.toUpperCase(), id: c.id, valor: media };
     }),
     gantt_por_led: leds.map((l) => ({
       ...l,
-      espacos_usados: new Set(comSt.filter((c) => c.led_codigo === l.codigo && c.fim >= R.hojeISO()).map((c) => c.anunciante)).size,
+      espacos_usados: new Set(
+        comSt
+          .filter((c) => c.led_codigo === l.codigo && c.fim >= R.hojeISO())
+          .map((c) => c.anunciante),
+      ).size,
       espacos_total: espacosTotalLed(l.codigo, cfg),
-      campanhas: comSt.filter((c) => c.led_codigo === l.codigo).map((c) => ({
-        ...c, reservas: reservasDaCampanha(c.id, c.anunciante),
-      })),
+      campanhas: comSt
+        .filter((c) => c.led_codigo === l.codigo)
+        .map((c) => ({
+          ...c,
+          reservas: reservasDaCampanha(c.id, c.anunciante),
+        })),
     })),
     // Mesma janela do KPI (0–7 dias): campanhas (card) + LEDs distintos (KPI)
     a_vencer_lista: comSt
-      .filter((c) => { const d = R.diasEntre(c.fim, R.hojeISO()); return d >= 0 && d <= 7 && c.inicio <= R.hojeISO(); })
-      .map((c) => ({ anunciante: c.anunciante, led: c.led_codigo, status: 'A vencer', dias: R.diasEntre(c.fim, R.hojeISO()), fim: c.fim })),
+      .filter((c) => {
+        const d = R.diasEntre(c.fim, R.hojeISO());
+        return d >= 0 && d <= 7 && c.inicio <= R.hojeISO();
+      })
+      .map((c) => ({
+        anunciante: c.anunciante,
+        led: c.led_codigo,
+        status: 'A vencer',
+        dias: R.diasEntre(c.fim, R.hojeISO()),
+        fim: c.fim,
+      })),
     a_iniciar_lista: [
       ...comSt
         .filter((c) => c.status === 'agendada')
-        .map((c) => ({ anunciante: c.anunciante, led: c.led_codigo, status: 'Agendada', dias: R.diasEntre(c.inicio, R.hojeISO()), inicio: c.inicio })),
+        .map((c) => ({
+          anunciante: c.anunciante,
+          led: c.led_codigo,
+          status: 'Agendada',
+          dias: R.diasEntre(c.inicio, R.hojeISO()),
+          inicio: c.inicio,
+        })),
       ...comSt.flatMap((c) =>
         reservasDaCampanha(c.id, c.anunciante)
-          .filter((r) => { const d = R.diasEntre(r.inicio, R.hojeISO()); return d >= 0 && d <= cfg.n_inicio_proximo; })
-          .map((r) => ({ anunciante: `${r.anunciante} (reserva)`, led: c.led_codigo, status: 'Agendada', dias: R.diasEntre(r.inicio, R.hojeISO()), inicio: r.inicio }))),
+          .filter((r) => {
+            const d = R.diasEntre(r.inicio, R.hojeISO());
+            return d >= 0 && d <= cfg.n_inicio_proximo;
+          })
+          .map((r) => ({
+            anunciante: `${r.anunciante} (reserva)`,
+            led: c.led_codigo,
+            status: 'Agendada',
+            dias: R.diasEntre(r.inicio, R.hojeISO()),
+            inicio: r.inicio,
+          })),
+      ),
     ],
   });
 });
@@ -637,15 +973,30 @@ app.get('/api/dashboard', authOpcional, (req, res) => {
 // — Planilha §4.4 (linhas Cidade,LED,Anunciante,Início,Fim,Status) —
 function linhasPlanilha(filtro, status, q) {
   const cfg = R.getConfig(db);
-  const nomes = Object.fromEntries(db.prepare('SELECT id,nome FROM cidades').all().map((c) => [c.id, c.nome]));
-  let rows = db.prepare('SELECT * FROM campanhas ORDER BY inicio').all()
+  const nomes = Object.fromEntries(
+    db
+      .prepare('SELECT id,nome FROM cidades')
+      .all()
+      .map((c) => [c.id, c.nome]),
+  );
+  let rows = db
+    .prepare('SELECT * FROM campanhas ORDER BY inicio')
+    .all()
     .filter((c) => filtro.length === 0 || filtro.includes(c.cidade_id))
     .map((c) => ({
-      id: c.id, cidade: nomes[c.cidade_id] || c.cidade_id, led: c.led_codigo, anunciante: c.anunciante,
-      inicio: c.inicio, fim: c.fim, status: R.statusCampanha(c, cfg),
+      id: c.id,
+      cidade: nomes[c.cidade_id] || c.cidade_id,
+      led: c.led_codigo,
+      anunciante: c.anunciante,
+      inicio: c.inicio,
+      fim: c.fim,
+      status: R.statusCampanha(c, cfg),
     }));
   if (status) rows = rows.filter((r) => r.status === status);
-  if (q) { const s = String(q).toLowerCase(); rows = rows.filter((r) => [r.cidade, r.led, r.anunciante].join(' ').toLowerCase().includes(s)); }
+  if (q) {
+    const s = String(q).toLowerCase();
+    rows = rows.filter((r) => [r.cidade, r.led, r.anunciante].join(' ').toLowerCase().includes(s));
+  }
   return rows;
 }
 app.get('/api/planilha', authOpcional, (req, res) => {
@@ -655,19 +1006,34 @@ app.get('/api/planilha', authOpcional, (req, res) => {
 // — Exportação §8.3 (exporta exatamente a view atual: mesmos filtros da planilha) —
 app.get('/api/export/planilha.csv', authOpcional, requer('exportar'), (req, res) => {
   const dados = linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q);
-  const csv = 'Cidade;LED;Anunciante;Início;Fim;Status\n' +
-    dados.map((c) => `${c.cidade};${c.led};${c.anunciante};${c.inicio};${c.fim};${c.status}`).join('\n');
-  res.header('Content-Type', 'text/csv; charset=utf-8').attachment('controle-de-leds.csv').send('﻿' + csv);
+  const csv =
+    'Cidade;LED;Anunciante;Início;Fim;Status\n' +
+    dados
+      .map((c) => `${c.cidade};${c.led};${c.anunciante};${c.inicio};${c.fim};${c.status}`)
+      .join('\n');
+  res
+    .header('Content-Type', 'text/csv; charset=utf-8')
+    .attachment('controle-de-leds.csv')
+    .send('﻿' + csv);
 });
 app.get('/api/export/planilha.xlsx', authOpcional, requer('exportar'), (req, res) => {
-  const ws = XLSX.utils.json_to_sheet(linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q).map((c) => ({
-    Cidade: c.cidade, LED: c.led, Anunciante: c.anunciante, Início: c.inicio, Fim: c.fim, Status: c.status,
-  })));
+  const ws = XLSX.utils.json_to_sheet(
+    linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q).map((c) => ({
+      Cidade: c.cidade,
+      LED: c.led,
+      Anunciante: c.anunciante,
+      Início: c.inicio,
+      Fim: c.fim,
+      Status: c.status,
+    })),
+  );
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Veiculação');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    .attachment('controle-de-leds.xlsx').send(buf);
+  res
+    .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    .attachment('controle-de-leds.xlsx')
+    .send(buf);
 });
 
 // — Relatórios PDF: por LED, cidade ou cliente, com status e período —
@@ -678,11 +1044,23 @@ const DIMENSOES_REL = {
   cliente: { titulo: 'Por cliente', chave: (r) => r.anunciante },
 };
 app.post('/api/relatorios/pdf', auth(), requer('relatorios'), (req, res) => {
-  const { dimensao = 'led', cidades = '', status = [], anunciante = '', de = '', ate = '' } = req.body || {};
-  if (!DIMENSOES_REL[dimensao]) return res.status(400).json({ erro: 'dimensao inválida (use led, cidade ou cliente)' });
-  if (de && !R.validarDataISO(de)) return res.status(400).json({ erro: 'data "de" inválida (AAAA-MM-DD)' });
-  if (ate && !R.validarDataISO(ate)) return res.status(400).json({ erro: 'data "até" inválida (AAAA-MM-DD)' });
-  const pedido = String(cidades || '').split(',').filter(Boolean);
+  const {
+    dimensao = 'led',
+    cidades = '',
+    status = [],
+    anunciante = '',
+    de = '',
+    ate = '',
+  } = req.body || {};
+  if (!DIMENSOES_REL[dimensao])
+    return res.status(400).json({ erro: 'dimensao inválida (use led, cidade ou cliente)' });
+  if (de && !R.validarDataISO(de))
+    return res.status(400).json({ erro: 'data "de" inválida (AAAA-MM-DD)' });
+  if (ate && !R.validarDataISO(ate))
+    return res.status(400).json({ erro: 'data "até" inválida (AAAA-MM-DD)' });
+  const pedido = String(cidades || '')
+    .split(',')
+    .filter(Boolean);
   const perm = cidadesPermitidas(req.user);
   let filtro;
   if (!perm) filtro = pedido;
@@ -702,13 +1080,27 @@ app.post('/api/relatorios/pdf', auth(), requer('relatorios'), (req, res) => {
   const doc = new PDFDocument({ margin: 40, size: 'A4', compress: false });
   const chunks = [];
   doc.on('data', (c) => chunks.push(c));
-  doc.on('end', () => res.header('Content-Type', 'application/pdf').attachment(`relatorio-${dimensao}.pdf`).send(Buffer.concat(chunks)));
+  doc.on('end', () =>
+    res
+      .header('Content-Type', 'application/pdf')
+      .attachment(`relatorio-${dimensao}.pdf`)
+      .send(Buffer.concat(chunks)),
+  );
   const norm = (s) => String(s || '').normalize('NFC');
-  const dtbr = (iso) => { const [y, m, d] = String(iso).split('-'); return `${d}/${m}/${y}`; };
+  const dtbr = (iso) => {
+    const [y, m, d] = String(iso).split('-');
+    return `${d}/${m}/${y}`;
+  };
   // corte manual em 1 linha (o ellipsis do pdfkit não segura nomes longos e quebra no meio da palavra)
-  const corta = (s, n) => { s = norm(s); return s.length > n ? s.slice(0, n - 3) + '...' : s };
+  const corta = (s, n) => {
+    s = norm(s);
+    return s.length > n ? s.slice(0, n - 3) + '...' : s;
+  };
   doc.fontSize(18).text(norm(`CONTROLE DE LED — Relatório ${DIMENSOES_REL[dimensao].titulo}`));
-  doc.fontSize(10).fillColor('#555').text(norm(`${rows.length} campanha(s) · gerado em ${dtbr(R.hojeISO())}`));
+  doc
+    .fontSize(10)
+    .fillColor('#555')
+    .text(norm(`${rows.length} campanha(s) · gerado em ${dtbr(R.hojeISO())}`));
   doc.moveDown().fillColor('#000');
   if (!rows.length) doc.fontSize(12).text('Nenhuma campanha para os filtros.');
   for (const [grupo, itens] of [...grupos.entries()].sort()) {
@@ -738,24 +1130,45 @@ app.post('/api/relatorios/pdf', auth(), requer('relatorios'), (req, res) => {
 // — Notificações §4.1 (polling + central + varredura) —
 function parseCSVLine(line, delim) {
   const out = [];
-  let cur = '', quoted = false;
+  let cur = '',
+    quoted = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (quoted) {
       if (ch === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++; }
-        else quoted = false;
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else quoted = false;
       } else cur += ch;
     } else if (ch === '"') quoted = true;
-    else if (ch === delim) { out.push(cur.trim()); cur = ''; }
-    else cur += ch;
+    else if (ch === delim) {
+      out.push(cur.trim());
+      cur = '';
+    } else cur += ch;
   }
   out.push(cur.trim());
   return out;
 }
-const MESES_PT = { jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06', jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12' };
+const MESES_PT = {
+  jan: '01',
+  fev: '02',
+  mar: '03',
+  abr: '04',
+  mai: '05',
+  jun: '06',
+  jul: '07',
+  ago: '08',
+  set: '09',
+  out: '10',
+  nov: '11',
+  dez: '12',
+};
 function normalizarData(s) {
-  s = String(s || '').trim().replace(/^\uFEFF/, '').replace(/\s+/g, '');
+  s = String(s || '')
+    .trim()
+    .replace(/^\uFEFF/, '')
+    .replace(/\s+/g, '');
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return R.validarDataISO(s) ? s : null;
   let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
   if (m) {
@@ -769,32 +1182,62 @@ function normalizarData(s) {
   if (m) {
     const mo = MESES_PT[m[2].slice(0, 3).toLowerCase()];
     if (!mo) return null;
-    const y = m[3] ? (m[3].length === 2 ? String(Number(m[3]) <= 49 ? 2000 + Number(m[3]) : 1900 + Number(m[3])) : m[3]) : String(new Date().getFullYear());
+    const y = m[3]
+      ? m[3].length === 2
+        ? String(Number(m[3]) <= 49 ? 2000 + Number(m[3]) : 1900 + Number(m[3]))
+        : m[3]
+      : String(new Date().getFullYear());
     const iso = `${y}-${mo}-${String(m[1]).padStart(2, '0')}`;
     return R.validarDataISO(iso) ? iso : null;
   }
   return null;
 }
-const normKey = (s) => String(s || '').trim().toLowerCase();
+const normKey = (s) =>
+  String(s || '')
+    .trim()
+    .toLowerCase();
 app.get('/api/import/modelo.csv', (req, res) => {
-  const modelo = 'Cidade;LED;Anunciante;Início;Fim;Reservada;Reserva1_Anunciante;Reserva1_Início;Reserva1_Fim;Reserva2_Anunciante;Reserva2_Início;Reserva2_Fim;Reserva3_Anunciante;Reserva3_Início;Reserva3_Fim\n' +
+  const modelo =
+    'Cidade;LED;Anunciante;Início;Fim;Reservada;Reserva1_Anunciante;Reserva1_Início;Reserva1_Fim;Reserva2_Anunciante;Reserva2_Início;Reserva2_Fim;Reserva3_Anunciante;Reserva3_Início;Reserva3_Fim\n' +
     'Aracaju;AJU 01;Exemplo S.A.;01/12/26;31/01/27;0;Parceiro S.A.;01/03/27;31/03/27;;;;;;\n' +
     'Aracaju;AJU 02;Outro Anunciante;2026-12-01;2027-01-31;1;;;;;;;;;\n';
-  res.header('Content-Type', 'text/csv; charset=utf-8').attachment('modelo-importacao.csv').send('﻿' + modelo);
+  res
+    .header('Content-Type', 'text/csv; charset=utf-8')
+    .attachment('modelo-importacao.csv')
+    .send('﻿' + modelo);
 });
 app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
   const { csv } = req.body || {};
-  if (!csv || typeof csv !== 'string') return res.status(400).json({ erro: 'envie {csv: "..."} no padrão Cidade;LED;Anunciante;Início;Fim' });
-  const linhas = String(csv).replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (linhas.length < 2) return res.status(400).json({ erro: 'planilha vazia (só cabeçalho ou nada)' });
-  const delim = (linhas[0].match(/;/g) || []).length >= (linhas[0].match(/,/g) || []).length ? ';' : ',';
+  if (!csv || typeof csv !== 'string')
+    return res
+      .status(400)
+      .json({ erro: 'envie {csv: "..."} no padrão Cidade;LED;Anunciante;Início;Fim' });
+  const linhas = String(csv)
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim() !== '');
+  if (linhas.length < 2)
+    return res.status(400).json({ erro: 'planilha vazia (só cabeçalho ou nada)' });
+  const delim =
+    (linhas[0].match(/;/g) || []).length >= (linhas[0].match(/,/g) || []).length ? ';' : ',';
   // chaves sem acento/separadores: "Reserva1_Início" e "reserva 1 - inicio" viram "reserva1inicio"
-  const chave = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const chave = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/gi, '')
+      .toLowerCase();
   const head = parseCSVLine(linhas[0], delim).map(chave);
   const idx = (names) => head.findIndex((h) => names.includes(h));
-  const iCid = idx(['cidade']), iLed = idx(['led', 'painel']), iAnu = idx(['anunciante', 'cliente']), iIni = idx(['inicio']), iFim = idx(['fim']);
+  const iCid = idx(['cidade']),
+    iLed = idx(['led', 'painel']),
+    iAnu = idx(['anunciante', 'cliente']),
+    iIni = idx(['inicio']),
+    iFim = idx(['fim']);
   if ([iCid, iLed, iAnu, iIni, iFim].some((i) => i < 0))
-    return res.status(400).json({ erro: 'cabeçalho fora do padrão — use: Cidade;LED;Anunciante;Início;Fim[;Reservada][;ReservaN_Anunciante;ReservaN_Início;ReservaN_Fim…]' });
+    return res.status(400).json({
+      erro: 'cabeçalho fora do padrão — use: Cidade;LED;Anunciante;Início;Fim[;Reservada][;ReservaN_Anunciante;ReservaN_Início;ReservaN_Fim…]',
+    });
   const iRes = idx(['reservada', 'reserva']);
   // pares ReservaN_[Anunciante_]Início/ReservaN_Fim (N = 1, 2, 3…): múltiplas
   // reservas por linha, cada uma com seu anunciante (vazio = o da linha)
@@ -808,39 +1251,54 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
     paresReserva.push({ k: m[1], i, j, a });
   });
   const cidades = db.prepare('SELECT * FROM cidades').all();
-  const semAcentoLower = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const semAcentoLower = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
   const porNome = Object.fromEntries(cidades.map((c) => [semAcentoLower(c.nome), c.id]));
   const porId = Object.fromEntries(cidades.map((c) => [semAcentoLower(c.id), c.id]));
   const ledsTodos = db.prepare('SELECT * FROM leds').all();
-  const porLed = Object.fromEntries(ledsTodos.map((l) => [semAcentoLower(l.codigo).replace(/\s+/g, ' '), l]));
-  const cfg = R.getConfig(db), hoje = R.hojeISO();
-  const criadas = [], ignoradas = [];
-  let reservasCriadas = 0, anosAjustados = 0;
+  const porLed = Object.fromEntries(
+    ledsTodos.map((l) => [semAcentoLower(l.codigo).replace(/\s+/g, ' '), l]),
+  );
+  const cfg = R.getConfig(db),
+    hoje = R.hojeISO();
+  const criadas = [],
+    ignoradas = [];
+  let reservasCriadas = 0,
+    anosAjustados = 0;
   // ano seguinte: "01/09/2026 → 28/02/2026" só faz sentido como 28/02/2027
   const rolarAnoFim = (ini, f) => {
     if (ini && f && f < ini) {
       const f2 = `${Number(f.slice(0, 4)) + 1}${f.slice(4)}`;
-      if (R.validarDataISO(f2)) { anosAjustados++; return f2; }
+      if (R.validarDataISO(f2)) {
+        anosAjustados++;
+        return f2;
+      }
     }
     return f;
   };
   linhas.slice(1).forEach((line, k) => {
-    const nLinha = k + 2, col = parseCSVLine(line, delim);
+    const nLinha = k + 2,
+      col = parseCSVLine(line, delim);
     const rot = { linha: nLinha, anunciante: col[iAnu] || '' };
     const cidadeId = porId[semAcentoLower(col[iCid])] || porNome[semAcentoLower(col[iCid])];
-    if (!cidadeId) return ignoradas.push({ ...rot, motivo: `cidade "${col[iCid]}" não cadastrada` });
+    if (!cidadeId)
+      return ignoradas.push({ ...rot, motivo: `cidade "${col[iCid]}" não cadastrada` });
     const ledBruto = String(col[iLed] || '').trim();
     const ledRow = porLed[semAcentoLower(ledBruto).replace(/\s+/g, ' ')];
-    if (!ledRow)
-      return ignoradas.push({ ...rot, motivo: `LED "${ledBruto}" não cadastrado` });
+    if (!ledRow) return ignoradas.push({ ...rot, motivo: `LED "${ledBruto}" não cadastrado` });
     const led = ledRow.codigo;
     if (ledRow.cidade_id !== cidadeId)
       return ignoradas.push({ ...rot, motivo: `LED ${led} não é da cidade informada` });
     if (!escopoCidadeOk(req.user, cidadeId))
       return ignoradas.push({ ...rot, motivo: 'fora do seu escopo de cidades' });
     const anunciante = R.normalizarAnunciante(col[iAnu]);
-    const rawIni = col[iIni] || '', rawFim = col[iFim] || '';
-    let inicio = normalizarData(rawIni), fim = normalizarData(rawFim);
+    const rawIni = col[iIni] || '',
+      rawFim = col[iFim] || '';
+    let inicio = normalizarData(rawIni),
+      fim = normalizarData(rawFim);
     if ((!inicio && rawIni) || (!fim && rawFim))
       return ignoradas.push({ ...rot, motivo: `data inválida ("${rawIni}" → "${rawFim}")` });
     if (!inicio && fim) inicio = fim; // só um lado preenchido = diária única
@@ -848,44 +1306,64 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
     // pares de reserva válidos (para o fluxo normal e para o fallback reserva-only)
     const candidatas = [];
     for (const p of paresReserva) {
-      const rawI = col[p.i] || '', rawF = col[p.j] || '';
+      const rawI = col[p.i] || '',
+        rawF = col[p.j] || '';
       if (!rawI && !rawF) continue;
       const anuRes = R.normalizarAnunciante(p.a >= 0 ? col[p.a] || '' : '') || anunciante;
       const tag = `linha ${nLinha} reserva ${p.k} (${anuRes || '?'})`;
       // só um lado preenchido = diária única; lado inválido = erro
-      let rIni = normalizarData(rawI), rFim = normalizarData(rawF);
-      if ((!rIni && rawI) || (!rFim && rawF)) { ignoradas.push({ ...rot, motivo: `${tag}: data inválida ("${rawI}" → "${rawF}")` }); continue; }
+      let rIni = normalizarData(rawI),
+        rFim = normalizarData(rawF);
+      if ((!rIni && rawI) || (!rFim && rawF)) {
+        ignoradas.push({ ...rot, motivo: `${tag}: data inválida ("${rawI}" → "${rawF}")` });
+        continue;
+      }
       if (!rIni && rFim) rIni = rFim;
       if (rIni && !rFim) rFim = rIni;
-      if (!rIni || !rFim) { ignoradas.push({ ...rot, motivo: `${tag}: data inválida ("${rawI}" → "${rawF}")` }); continue; }
+      if (!rIni || !rFim) {
+        ignoradas.push({ ...rot, motivo: `${tag}: data inválida ("${rawI}" → "${rawF}")` });
+        continue;
+      }
       if (rIni > rFim) rFim = rolarAnoFim(rIni, rFim);
-      if (rIni > rFim) { ignoradas.push({ ...rot, motivo: `${tag}: início posterior ao fim` }); continue; }
+      if (rIni > rFim) {
+        ignoradas.push({ ...rot, motivo: `${tag}: início posterior ao fim` });
+        continue;
+      }
       candidatas.push({ anuRes, rIni, rFim, tag });
     }
     // helper local: cria campanha com checagens de duplicada e lotação
     const tentarCriar = (anunc, ini, fimm, reservadaFlag) => {
-      if (db.prepare('SELECT * FROM campanhas WHERE led_codigo = ? AND anunciante = ? AND inicio = ?').get(led, anunc, ini))
+      if (
+        db
+          .prepare('SELECT * FROM campanhas WHERE led_codigo = ? AND anunciante = ? AND inicio = ?')
+          .get(led, anunc, ini)
+      )
         return { erro: 'já existe (mesmo LED/anunciante/início)' };
       const usados = R.espacosUsados(db, led, hoje);
       if (!usados.includes(anunc) && usados.length >= cfg.max_clientes_por_led)
         return { erro: `LED ${led} lotado (${usados.length}/${cfg.max_clientes_por_led})` };
       const id = `imp-${Date.now()}-${k}`;
       db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunc);
-      db.prepare('INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)')
-        .run(id, cidadeId, led, anunc, ini, fimm, reservadaFlag ? 1 : 0);
+      db.prepare(
+        'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
+      ).run(id, cidadeId, led, anunc, ini, fimm, reservadaFlag ? 1 : 0);
       criadas.push(id);
       return { id };
     };
     const gravarReserva = (campId, anuRes, rIni, rFim) => {
       const rid = `imp-r-${Date.now()}-${k}-${reservasCriadas}`;
       db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anuRes);
-      db.prepare('INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)')
-        .run(rid, campId, rIni, rFim, anuRes, req.user.login);
+      db.prepare(
+        'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
+      ).run(rid, campId, rIni, rFim, anuRes, req.user.login);
       reservasCriadas++;
     };
     const checarReserva = (campId, feitas, cd, anuDefault) => {
       const anu = cd.anuRes || anuDefault;
-      if (feitas.some((f) => f.inicio === cd.rIni && f.fim === cd.rFim && f.anu === anu)) { ignoradas.push({ ...rot, motivo: `${cd.tag}: reserva duplicada na linha` }); return; }
+      if (feitas.some((f) => f.inicio === cd.rIni && f.fim === cd.rFim && f.anu === anu)) {
+        ignoradas.push({ ...rot, motivo: `${cd.tag}: reserva duplicada na linha` });
+        return;
+      }
       gravarReserva(campId, anu, cd.rIni, cd.rFim);
       feitas.push({ inicio: cd.rIni, fim: cd.rFim, anu });
     };
@@ -894,14 +1372,23 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       if (!anunciante && !candidatas.length)
         return ignoradas.push({ ...rot, motivo: 'linha vazia ou sem datas' });
       if (!candidatas.length)
-        return ignoradas.push({ ...rot, motivo: `data inválida ("${col[iIni]}" → "${col[iFim]}")` });
+        return ignoradas.push({
+          ...rot,
+          motivo: `data inválida ("${col[iIni]}" → "${col[iFim]}")`,
+        });
       const primeira = candidatas[0];
       const anuCamp = anunciante || primeira.anuRes;
       if (!anuCamp) return ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
       const rc = tentarCriar(anuCamp, primeira.rIni, primeira.rFim, true);
       if (rc.erro) return ignoradas.push({ ...rot, motivo: rc.erro });
-      ignoradas.push({ ...rot, motivo: `sem datas de campanha — criada como reservada de ${primeira.rIni} → ${primeira.rFim}`, aviso: true });
-      const feitas = [{ inicio: primeira.rIni, fim: primeira.rFim, anu: primeira.anuRes || anuCamp }];
+      ignoradas.push({
+        ...rot,
+        motivo: `sem datas de campanha — criada como reservada de ${primeira.rIni} → ${primeira.rFim}`,
+        aviso: true,
+      });
+      const feitas = [
+        { inicio: primeira.rIni, fim: primeira.rFim, anu: primeira.anuRes || anuCamp },
+      ];
       candidatas.slice(1).forEach((cd) => checarReserva(rc.id, feitas, cd, anuCamp));
       return;
     }
@@ -911,51 +1398,100 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       fim = rolado;
     }
     if (!anunciante) return ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
-    const reservada = iRes >= 0 ? ['1', 'sim', 's', 'verdadeiro', 'true'].includes(normKey(col[iRes])) : false;
+    const reservada =
+      iRes >= 0 ? ['1', 'sim', 's', 'verdadeiro', 'true'].includes(normKey(col[iRes])) : false;
     const rc = tentarCriar(anunciante, inicio, fim, reservada);
     if (rc.erro) return ignoradas.push({ ...rot, motivo: rc.erro });
     const feitas = [];
     for (const cd of candidatas) {
       const rFimRolado = rolarAnoFim(cd.rIni, cd.rFim);
-      checarReserva(rc.id, feitas, rFimRolado === cd.rFim ? cd : { ...cd, rFim: rFimRolado }, anunciante);
+      checarReserva(
+        rc.id,
+        feitas,
+        rFimRolado === cd.rFim ? cd : { ...cd, rFim: rFimRolado },
+        anunciante,
+      );
     }
   });
-  log(req.user.login, 'planilha.import', `criadas=${criadas.length} reservas=${reservasCriadas} anos_ajustados=${anosAjustados} ignoradas=${ignoradas.length}`);
-  res.json({ total: linhas.length - 1, criadas: criadas.length, reservas_criadas: reservasCriadas, anos_ajustados: anosAjustados, ignoradas, ids: criadas });
+  log(
+    req.user.login,
+    'planilha.import',
+    `criadas=${criadas.length} reservas=${reservasCriadas} anos_ajustados=${anosAjustados} ignoradas=${ignoradas.length}`,
+  );
+  res.json({
+    total: linhas.length - 1,
+    criadas: criadas.length,
+    reservas_criadas: reservasCriadas,
+    anos_ajustados: anosAjustados,
+    ignoradas,
+    ids: criadas,
+  });
 });
 app.get('/api/notificacoes', authOpcional, (req, res) => {
   const filtro = filtroEfetivo(req);
   let rows = db.prepare('SELECT * FROM notificacoes ORDER BY criada_em DESC LIMIT 50').all();
   if (filtro.length) rows = rows.filter((n) => !n.cidade_id || filtro.includes(n.cidade_id));
   // Enriquece para o "Ver campanha": anunciante, LED e id real da campanha
-  const porId = Object.fromEntries(db.prepare('SELECT * FROM campanhas').all().map((c) => [c.id, c]));
-  const resDe = (rid) => db.prepare(`
+  const porId = Object.fromEntries(
+    db
+      .prepare('SELECT * FROM campanhas')
+      .all()
+      .map((c) => [c.id, c]),
+  );
+  const resDe = (rid) =>
+    db
+      .prepare(
+        `
     SELECT r.*, c.anunciante AS camp_anunciante, c.led_codigo, c.id AS camp_id, c.cidade_id FROM reservas r
-    JOIN campanhas c ON c.id = r.campanha_id WHERE r.id = ?`).get(rid);
-  res.json(rows.map((n) => {
-    let anunciante, led, ref;
-    const camp = porId[n.campanha_id];
-    if (camp) ({ anunciante, led_codigo: led, id: ref } = camp);
-    else {
-      const r = resDe(n.campanha_id);
-      if (r) { anunciante = r.anunciante || r.camp_anunciante; led = r.led_codigo; ref = r.camp_id; }
+    JOIN campanhas c ON c.id = r.campanha_id WHERE r.id = ?`,
+      )
+      .get(rid);
+  res.json(
+    rows.map((n) => {
+      let anunciante, led, ref;
+      const camp = porId[n.campanha_id];
+      if (camp) ({ anunciante, led_codigo: led, id: ref } = camp);
       else {
-        const m = /^grupo:(ini|venc|res):(.*):(\d{4}-\d{2}-\d{2})$/.exec(n.campanha_id);
-        if (m) {
-          anunciante = m[2];
-          const alvo = db.prepare('SELECT * FROM campanhas WHERE anunciante = ? AND inicio = ? LIMIT 1').get(m[2], m[3])
-            || db.prepare(`SELECT c.* FROM reservas r JOIN campanhas c ON c.id = r.campanha_id
-                WHERE r.inicio = ? AND (r.anunciante = ? OR (r.anunciante = '' AND c.anunciante = ?)) LIMIT 1`).get(m[3], m[2], m[2]);
-          if (alvo) { led = alvo.led_codigo; ref = alvo.id; }
+        const r = resDe(n.campanha_id);
+        if (r) {
+          anunciante = r.anunciante || r.camp_anunciante;
+          led = r.led_codigo;
+          ref = r.camp_id;
+        } else {
+          const m = /^grupo:(ini|venc|res):(.*):(\d{4}-\d{2}-\d{2})$/.exec(n.campanha_id);
+          if (m) {
+            anunciante = m[2];
+            const alvo =
+              db
+                .prepare('SELECT * FROM campanhas WHERE anunciante = ? AND inicio = ? LIMIT 1')
+                .get(m[2], m[3]) ||
+              db
+                .prepare(
+                  `SELECT c.* FROM reservas r JOIN campanhas c ON c.id = r.campanha_id
+                WHERE r.inicio = ? AND (r.anunciante = ? OR (r.anunciante = '' AND c.anunciante = ?)) LIMIT 1`,
+                )
+                .get(m[3], m[2], m[2]);
+            if (alvo) {
+              led = alvo.led_codigo;
+              ref = alvo.id;
+            }
+          }
         }
       }
-    }
-    return {
-      id: n.id, titulo: n.titulo, corpo: n.corpo, lida: !!n.lida, evento: n.evento,
-      campanha_id: n.campanha_id, cidade_id: n.cidade_id || undefined,
-      anunciante, led, campanha_ref: ref,
-    };
-  }));
+      return {
+        id: n.id,
+        titulo: n.titulo,
+        corpo: n.corpo,
+        lida: !!n.lida,
+        evento: n.evento,
+        campanha_id: n.campanha_id,
+        cidade_id: n.cidade_id || undefined,
+        anunciante,
+        led,
+        campanha_ref: ref,
+      };
+    }),
+  );
 });
 app.post('/api/notificacoes/varredura', auth(), (req, res) => {
   const r = R.varreduraNotificacoes(db);
@@ -970,26 +1506,44 @@ app.patch('/api/notificacoes/:id/lida', auth(), (req, res) => {
 // — Tema: paleta do painel (fundo, textos, destaques, gráficos) —
 // recurso `config`; GET público (o painel precisa ler sem login p/ pintar)
 const TEMA_PADRAO = {
-  bg: '#0b1224', panel: '#131b32', panel2: '#0f1730', border: '#232d4a',
-  text: '#eef1f8', muted: '#8b93ab', teal: '#2dd4bf', orange: '#f5943a',
-  blue: '#4f8ff7', purple: '#8b7cf6', red: '#f0546a',
+  bg: '#0b1224',
+  panel: '#131b32',
+  panel2: '#0f1730',
+  border: '#232d4a',
+  text: '#eef1f8',
+  muted: '#8b93ab',
+  teal: '#2dd4bf',
+  orange: '#f5943a',
+  blue: '#4f8ff7',
+  purple: '#8b7cf6',
+  red: '#f0546a',
 };
 const ROTULOS_TEMA = {
-  bg: 'Fundo', panel: 'Painel', panel2: 'Painel 2', border: 'Borda',
-  text: 'Texto', muted: 'Texto apagado', teal: 'Destaque/veiculando', orange: 'Alerta/a vencer',
-  blue: 'Informação/agendada', purple: 'Reservada', red: 'Perigo/vencida',
+  bg: 'Fundo',
+  panel: 'Painel',
+  panel2: 'Painel 2',
+  border: 'Borda',
+  text: 'Texto',
+  muted: 'Texto apagado',
+  teal: 'Destaque/veiculando',
+  orange: 'Alerta/a vencer',
+  blue: 'Informação/agendada',
+  purple: 'Reservada',
+  red: 'Perigo/vencida',
 };
 function temaVars() {
   try {
     const row = db.prepare('SELECT vars FROM tema WHERE id = 1').get();
     return { ...TEMA_PADRAO, ...JSON.parse(row?.vars || '{}') };
-  } catch { return { ...TEMA_PADRAO }; }
+  } catch {
+    return { ...TEMA_PADRAO };
+  }
 }
 const ehCor = (s) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(s || ''));
 app.get('/api/tema', (req, res) => res.json({ vars: temaVars(), rotulos: ROTULOS_TEMA }));
 app.put('/api/tema', auth(), requer('config'), (req, res) => {
   const { restaurar = false } = req.body || {};
-  const vars = (req.body?.vars && typeof req.body.vars === 'object') ? req.body.vars : {};
+  const vars = req.body?.vars && typeof req.body.vars === 'object' ? req.body.vars : {};
   if (restaurar) {
     db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)').run('{}');
     log(req.user.login, 'tema.restore', 'padrão');
@@ -998,11 +1552,11 @@ app.put('/api/tema', auth(), requer('config'), (req, res) => {
   const atual = temaVars();
   for (const [k, v] of Object.entries(vars)) {
     if (!(k in TEMA_PADRAO)) return res.status(400).json({ erro: `variável desconhecida: ${k}` });
-    if (!ehCor(v)) return res.status(400).json({ erro: `cor inválida para ${k} (use #rgb ou #rrggbb)` });
+    if (!ehCor(v))
+      return res.status(400).json({ erro: `cor inválida para ${k} (use #rgb ou #rrggbb)` });
     atual[k] = v;
   }
-  db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)')
-    .run(JSON.stringify(atual));
+  db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)').run(JSON.stringify(atual));
   log(req.user.login, 'tema.update', Object.keys(vars).join(','));
   res.json({ vars: temaVars() });
 });
@@ -1015,8 +1569,13 @@ app.get('/api/logo', (req, res) => {
 });
 app.put('/api/logo', auth(), requer('config'), (req, res) => {
   const { dataUrl } = req.body || {};
-  if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(dataUrl))
-    return res.status(400).json({ erro: 'envie {dataUrl} de imagem (png/jpg/gif/webp/svg em base64)' });
+  if (
+    typeof dataUrl !== 'string' ||
+    !/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(dataUrl)
+  )
+    return res
+      .status(400)
+      .json({ erro: 'envie {dataUrl} de imagem (png/jpg/gif/webp/svg em base64)' });
   if (dataUrl.length > LOGO_MAX)
     return res.status(413).json({ erro: `logo grande demais (máx. ${LOGO_MAX / 1024}KB)` });
   db.prepare('UPDATE config SET logo_dataurl = ? WHERE id = 1').run(dataUrl);
@@ -1031,8 +1590,14 @@ app.delete('/api/logo', auth(), requer('config'), (req, res) => {
 function detalheUsuario(login) {
   const u = db.prepare('SELECT login,perfil,nome FROM usuarios WHERE login = ?').get(login);
   if (!u) return null;
-  u.cidades = db.prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?').all(login).map((r) => r.cidade_id);
-  u.permissoes = db.prepare('SELECT recurso FROM permissoes WHERE login = ?').all(login).map((r) => r.recurso);
+  u.cidades = db
+    .prepare('SELECT cidade_id FROM usuario_cidade WHERE login = ?')
+    .all(login)
+    .map((r) => r.cidade_id);
+  u.permissoes = db
+    .prepare('SELECT recurso FROM permissoes WHERE login = ?')
+    .all(login)
+    .map((r) => r.recurso);
   u.efetivas = permissoesEfetivas(login, u.perfil);
   return u;
 }
@@ -1040,21 +1605,37 @@ const IDS_RECURSOS = RECURSOS.map((r) => r.id);
 app.get('/api/recursos', auth(), (req, res) => res.json(RECURSOS));
 app.get('/api/me', auth(), (req, res) => res.json(detalheUsuario(req.user.login)));
 app.get('/api/usuarios', auth(), requer('usuarios'), (req, res) =>
-  res.json(db.prepare('SELECT login FROM usuarios ORDER BY login').all().map((r) => detalheUsuario(r.login))));
+  res.json(
+    db
+      .prepare('SELECT login FROM usuarios ORDER BY login')
+      .all()
+      .map((r) => detalheUsuario(r.login)),
+  ),
+);
 app.post('/api/usuarios', auth(), requer('usuarios'), (req, res) => {
   const { login, senha, perfil = 'visualizador', nome = '' } = req.body || {};
   const cidades = Array.isArray(req.body?.cidades) ? req.body.cidades : [];
   const permissoes = Array.isArray(req.body?.permissoes) ? req.body.permissoes : [];
   if (!login || !senha) return res.status(400).json({ erro: 'login e senha obrigatórios' });
-  if (!PERFIL_DEFAULT[perfil]) return res.status(400).json({ erro: `perfil inválido (use ${Object.keys(PERFIL_DEFAULT).join('/')})` });
+  if (!PERFIL_DEFAULT[perfil])
+    return res
+      .status(400)
+      .json({ erro: `perfil inválido (use ${Object.keys(PERFIL_DEFAULT).join('/')})` });
   for (const c of cidades)
     if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(c))
       return res.status(400).json({ erro: `cidade "${c}" não cadastrada` });
   const recs = [...new Set(permissoes)].filter((r) => IDS_RECURSOS.includes(r));
   try {
     const senhaHash = bcrypt.hashSync(senha, 10);
-    db.prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)').run(login, senhaHash, perfil, nome);
-  } catch { return res.status(409).json({ erro: `login "${login}" já existe` }); }
+    db.prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)').run(
+      login,
+      senhaHash,
+      perfil,
+      nome,
+    );
+  } catch {
+    return res.status(409).json({ erro: `login "${login}" já existe` });
+  }
   const li = db.prepare('INSERT OR IGNORE INTO usuario_cidade (login,cidade_id) VALUES (?,?)');
   for (const c of new Set(cidades)) li.run(login, c);
   const pi = db.prepare('INSERT OR IGNORE INTO permissoes (login,recurso) VALUES (?,?)');
@@ -1067,11 +1648,15 @@ app.put('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
   if (!cur) return res.status(404).json({ erro: 'usuário não encontrado' });
   const { senha, perfil = cur.perfil, nome = cur.nome, cidades, permissoes } = req.body || {};
   if (!PERFIL_DEFAULT[perfil]) return res.status(400).json({ erro: 'perfil inválido' });
-  if (cur.perfil === 'admin' && perfil !== 'admin' &&
-      db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1)
+  if (
+    cur.perfil === 'admin' &&
+    perfil !== 'admin' &&
+    db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1
+  )
     return res.status(409).json({ erro: 'não é possível rebaixar o último admin' });
-  db.prepare('UPDATE usuarios SET senha = COALESCE(?,senha), perfil = ?, nome = ? WHERE login = ?')
-    .run(senha ? bcrypt.hashSync(senha, 10) : null, perfil, nome, req.params.login);
+  db.prepare(
+    'UPDATE usuarios SET senha = COALESCE(?,senha), perfil = ?, nome = ? WHERE login = ?',
+  ).run(senha ? bcrypt.hashSync(senha, 10) : null, perfil, nome, req.params.login);
   if (Array.isArray(cidades)) {
     for (const c of cidades)
       if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(c))
@@ -1091,8 +1676,12 @@ app.put('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
 app.delete('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
   const cur = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.params.login);
   if (!cur) return res.status(404).json({ erro: 'usuário não encontrado' });
-  if (req.params.login === req.user.login) return res.status(409).json({ erro: 'não é possível excluir o próprio login' });
-  if (cur.perfil === 'admin' && db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1)
+  if (req.params.login === req.user.login)
+    return res.status(409).json({ erro: 'não é possível excluir o próprio login' });
+  if (
+    cur.perfil === 'admin' &&
+    db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1
+  )
     return res.status(409).json({ erro: 'não é possível excluir o último admin' });
   db.prepare('DELETE FROM usuarios WHERE login = ?').run(req.params.login);
   log(req.user.login, 'usuario.delete', req.params.login);
@@ -1100,24 +1689,57 @@ app.delete('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
 });
 
 // — Backup: exporta o banco inteiro (JSON) e restaura —
-const TABELAS_BACKUP = ['config', 'cidades', 'leds', 'anunciantes', 'campanhas', 'programacoes', 'reservas', 'usuarios', 'usuario_cidade', 'permissoes', 'notificacoes', 'auditoria', 'tema'];
+const TABELAS_BACKUP = [
+  'config',
+  'cidades',
+  'leds',
+  'anunciantes',
+  'campanhas',
+  'programacoes',
+  'reservas',
+  'usuarios',
+  'usuario_cidade',
+  'permissoes',
+  'notificacoes',
+  'auditoria',
+  'tema',
+];
 app.get('/api/backup', auth(), requer('config'), (req, res) => {
   const tabelas = {};
   for (const t of TABELAS_BACKUP) {
-    try { tabelas[t] = db.prepare(`SELECT * FROM ${t}`).all(); }
-    catch { tabelas[t] = []; }
+    try {
+      tabelas[t] = db.prepare(`SELECT * FROM ${t}`).all();
+    } catch {
+      tabelas[t] = [];
+    }
   }
   const nome = `backup-led-${R.hojeISO()}.json`;
-  res.header('Content-Type', 'application/json').attachment(nome)
-    .send(JSON.stringify({ app: 'saas-leds', versao: 1, gerado_em: new Date().toISOString(), por: req.user.login, tabelas }));
+  res
+    .header('Content-Type', 'application/json')
+    .attachment(nome)
+    .send(
+      JSON.stringify({
+        app: 'saas-leds',
+        versao: 1,
+        gerado_em: new Date().toISOString(),
+        por: req.user.login,
+        tabelas,
+      }),
+    );
 });
 app.post('/api/backup/restaurar', auth(), requer('config'), (req, res) => {
   const { tabelas } = req.body || {};
   if (!tabelas || typeof tabelas !== 'object' || !Array.isArray(tabelas.campanhas))
-    return res.status(400).json({ erro: 'backup inválido (esperado {tabelas: {...}} com campanhas)' });
+    return res
+      .status(400)
+      .json({ erro: 'backup inválido (esperado {tabelas: {...}} com campanhas)' });
   const tx = db.transaction(() => {
     for (const t of [...TABELAS_BACKUP].reverse()) db.prepare(`DELETE FROM ${t}`).run();
-    const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+    const cols = (t) =>
+      db
+        .prepare(`PRAGMA table_info(${t})`)
+        .all()
+        .map((c) => c.name);
     for (const t of TABELAS_BACKUP) {
       const rows = Array.isArray(tabelas[t]) ? tabelas[t] : [];
       if (!rows.length) continue;
@@ -1125,12 +1747,17 @@ app.post('/api/backup/restaurar', auth(), requer('config'), (req, res) => {
       for (const r of rows) {
         const ks = Object.keys(r).filter((k) => validas.includes(k));
         if (!ks.length) continue;
-        db.prepare(`INSERT OR REPLACE INTO ${t} (${ks.join(',')}) VALUES (${ks.map(() => '?').join(',')})`)
-          .run(...ks.map((k) => r[k]));
+        db.prepare(
+          `INSERT OR REPLACE INTO ${t} (${ks.join(',')}) VALUES (${ks.map(() => '?').join(',')})`,
+        ).run(...ks.map((k) => r[k]));
       }
     }
   });
-  try { tx(); } catch (e) { return res.status(400).json({ erro: 'falha ao restaurar: ' + e.message }); }
+  try {
+    tx();
+  } catch (e) {
+    return res.status(400).json({ erro: 'falha ao restaurar: ' + e.message });
+  }
   const contagem = {};
   for (const t of TABELAS_BACKUP) contagem[t] = db.prepare(`SELECT COUNT(*) v FROM ${t}`).get().v;
   log(req.user.login, 'backup.restore', JSON.stringify(contagem));
@@ -1139,18 +1766,34 @@ app.post('/api/backup/restaurar', auth(), requer('config'), (req, res) => {
 
 // — Auditoria §9.2 —
 app.get('/api/auditoria', auth(), soAdmin, (req, res) =>
-  res.json(db.prepare('SELECT * FROM auditoria ORDER BY id DESC LIMIT 100').all()));
+  res.json(db.prepare('SELECT * FROM auditoria ORDER BY id DESC LIMIT 100').all()),
+);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, hoje: R.hojeISO() }));
 
+// Documentação OpenAPI/Swagger
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 // Job diário: poda de órfãs + varredura automática (a cada 24h; +1 execução no boot)
 let jobInterval = null;
-jobInterval = setInterval(() => { try { R.podarNotificacoesOrfas(db); R.varreduraNotificacoes(db); } catch {} }, 24 * 3600 * 1000);
+jobInterval = setInterval(
+  () => {
+    try {
+      R.podarNotificacoesOrfas(db);
+      R.varreduraNotificacoes(db);
+    } catch {
+      // ignore: falha silenciosa no job agendado não deve derrubar o servidor
+    }
+  },
+  24 * 3600 * 1000,
+);
 try {
   const podadas = R.podarNotificacoesOrfas(db);
   if (podadas) console.log(`notificações órfãs removidas: ${podadas}`);
   R.varreduraNotificacoes(db);
-} catch {}
+} catch {
+  // ignore: falha na varredura inicial não deve impedir o boot da API
+}
 
 let server = null;
 function encerrar() {
@@ -1162,6 +1805,8 @@ process.on('SIGTERM', encerrar);
 process.on('SIGINT', encerrar);
 
 if (require.main === module) {
-  server = app.listen(PORT, () => console.log(`CONTROLE DE LED API on http://localhost:${PORT} (hoje=${R.hojeISO()})`));
+  server = app.listen(PORT, () =>
+    console.log(`CONTROLE DE LED API on http://localhost:${PORT} (hoje=${R.hojeISO()})`),
+  );
 }
 module.exports = app;
