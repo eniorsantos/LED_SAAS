@@ -1,5 +1,6 @@
 ﻿// Modelo relacional — spec §2 + §9 (CIDADE, LED, ANUNCIANTE, CAMPANHA,
 // PROGRAMACAO, USUARIO, PERFIL, USUARIO_CIDADE, NOTIFICACAO, AUDITORIA, CONFIG).
+const bcrypt = require('bcrypt');
 const Database = require('better-sqlite3');
 const path = require('path');
 
@@ -102,10 +103,10 @@ function seed() {
     ['s3', 'c4', 'AJU 01', '07:30', 10, 'SEG', 1],
   ]);
   ins('INSERT OR IGNORE INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)', [
-    ['admin', 'admin123', 'admin', 'Administrador'],
-    ['regional', 'reg123', 'regional', 'Gestor Regional'],
-    ['operador', 'op123', 'operador', 'Operador'],
-    ['viewer', 'view123', 'visualizador', 'Visualizador'],
+    ['admin', bcrypt.hashSync('admin123', 10), 'admin', 'Administrador'],
+    ['regional', bcrypt.hashSync('reg123', 10), 'regional', 'Gestor Regional'],
+    ['operador', bcrypt.hashSync('op123', 10), 'operador', 'Operador'],
+    ['viewer', bcrypt.hashSync('view123', 10), 'visualizador', 'Visualizador'],
   ]);
   ins('INSERT OR IGNORE INTO usuario_cidade (login,cidade_id) VALUES (?,?)', [['regional', 'aracaju']]);
   // Exemplo de múltiplas reservas: Jardins (c5) tem 1 reserva futura além do período atual
@@ -125,7 +126,7 @@ if (process.env.SEED === 'true' || process.env.SEED === '1') {
   seed();
 }
 if (db.prepare('SELECT COUNT(*) v FROM usuarios').get().v === 0) {
-  db.prepare("INSERT INTO usuarios (login,senha,perfil,nome) VALUES ('admin','admin123','admin','Administrador')").run();
+  db.prepare("INSERT INTO usuarios (login,senha,perfil,nome) VALUES ('admin',?, 'admin','Administrador')").run(bcrypt.hashSync('admin123', 10));
   console.log('admin de resgate criado (admin/admin123 — troque a senha)');
 }
 

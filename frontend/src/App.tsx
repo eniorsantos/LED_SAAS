@@ -1078,8 +1078,8 @@ export default function App() {
                 {podeEditar && selecionadas.length > 0 && (
                   <button className="danger" onClick={excluirSelecionadas}>🗑 Excluir {selecionadas.length} selecionada(s)</button>
                 )}
-                {can('exportar') && <a href={api.exportUrl('xlsx', cidade, q, stFilter)}><button>⬇ .xlsx</button></a>}
-                {can('exportar') && <a href={api.exportUrl('csv', cidade, q, stFilter)}><button>⬇ .csv</button></a>}
+                {can('exportar') && <button onClick={() => api.exportar('xlsx', cidade, q, stFilter)}>⬇ .xlsx</button>}
+                {can('exportar') && <button onClick={() => api.exportar('csv', cidade, q, stFilter)}>⬇ .csv</button>}
                 <button className="ghost" onClick={() => window.print()}>🖨 PDF</button>
               </div>
               {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
@@ -1283,7 +1283,6 @@ export default function App() {
                 {can('cidades') && <div className={`tab ${configSecao === 'cidades' ? 'active' : ''}`} onClick={() => setConfigSecao('cidades')}>Cidades</div>}
                 {can('config') && <div className={`tab ${configSecao === 'tema' ? 'active' : ''}`} onClick={() => setConfigSecao('tema')}>Cores</div>}
                 {can('config') && <div className={`tab ${configSecao === 'logo' ? 'active' : ''}`} onClick={() => setConfigSecao('logo')}>Logo</div>}
-                {can('config') && <div className={`tab ${configSecao === 'backup' ? 'active' : ''}`} onClick={() => setConfigSecao('backup')}>Backup</div>}
                 {can('config') && <div className={`tab ${configSecao === 'backup' ? 'active' : ''}`} onClick={() => setConfigSecao('backup')}>Backup</div>}
                 {can('importar') && <div className={`tab ${configSecao === 'importar' ? 'active' : ''}`} onClick={() => setConfigSecao('importar')}>Importar</div>}
               </div>

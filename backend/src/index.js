@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 const XLSX = require('xlsx');
 const db = require('./db');
 const R = require('./regras');
@@ -9,8 +10,33 @@ const R = require('./regras');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'led-control-dev';
+const IS_PROD = process.env.NODE_ENV === 'production';
+if (IS_PROD && JWT_SECRET === 'led-control-dev') {
+  throw new Error('JWT_SECRET obrigatório em produção — defina uma variável de ambiente forte');
+}
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', true);
+
+// — Rate limiting simples (login) —
+const loginAttempts = new Map();
+const LOGIN_MAX_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+function rateLimitLogin(req, res, next) {
+  const ip = (req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown').toString();
+  const now = Date.now();
+  const record = loginAttempts.get(ip) || { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+  if (now > record.resetAt) {
+    record.count = 0;
+    record.resetAt = now + LOGIN_WINDOW_MS;
+  }
+  if (record.count >= LOGIN_MAX_ATTEMPTS) {
+    return res.status(429).json({ erro: 'muitas tentativas de login — tente novamente em 15 minutos' });
+  }
+  record.count++;
+  loginAttempts.set(ip, record);
+  next();
+}
 
 const log = (quem, oque, detalhe = '') =>
   db.prepare('INSERT INTO auditoria (quem,oque,detalhe) VALUES (?,?,?)').run(quem, oque, detalhe);
@@ -114,10 +140,23 @@ function espacosTotalLed(ledCodigo, cfg) {
   return (l && Number.isInteger(l.espacos_total) && l.espacos_total > 0) ? l.espacos_total : cfg.max_clientes_por_led;
 }
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', rateLimitLogin, (req, res) => {
   const { login, senha } = req.body || {};
-  const u = db.prepare('SELECT * FROM usuarios WHERE login = ? AND senha = ?').get(login, senha);
+  const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(login);
   if (!u) return res.status(401).json({ erro: 'credenciais inválidas' });
+  let senhaValida = false;
+  try {
+    senhaValida = u.senha.startsWith('$2b$')
+      ? bcrypt.compareSync(senha, u.senha)
+      : (u.senha === senha);
+  } catch { senhaValida = (u.senha === senha); }
+  if (!senhaValida) return res.status(401).json({ erro: 'credenciais inválidas' });
+  // Migração transparente: se a senha ainda está em texto plano, reescreve com hash
+  if (!u.senha.startsWith('$2b$')) {
+    const hash = bcrypt.hashSync(senha, 10);
+    db.prepare('UPDATE usuarios SET senha = ? WHERE login = ?').run(hash, login);
+    log(u.login, 'login.password_migrated', u.perfil);
+  }
   const token = jwt.sign({ login: u.login, perfil: u.perfil, nome: u.nome }, JWT_SECRET, { expiresIn: '12h' });
   log(u.login, 'login', u.perfil);
   res.json({ token, perfil: u.perfil, nome: u.nome, login: u.login });
@@ -411,7 +450,6 @@ app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
 app.delete('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
   const r = db.prepare('SELECT * FROM reservas WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ erro: 'reserva não encontrada' });
-  if (!r) return res.status(404).json({ erro: 'reserva não encontrada' });
   const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(r.campanha_id);
   if (camp && !escopoCidadeOk(req.user, camp.cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
@@ -452,7 +490,6 @@ app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
     return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido)' });
   if (nx.inicio > nx.fim) return res.status(400).json({ erro: 'início posterior ao fim' });
   // rotação: sem checagem de choque (ver POST)
-  db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
   db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
   db.prepare('UPDATE reservas SET inicio = ?, fim = ?, anunciante = ? WHERE id = ?')
     .run(nx.inicio, nx.fim, nx.anunciante, req.params.id);
@@ -1015,7 +1052,8 @@ app.post('/api/usuarios', auth(), requer('usuarios'), (req, res) => {
       return res.status(400).json({ erro: `cidade "${c}" não cadastrada` });
   const recs = [...new Set(permissoes)].filter((r) => IDS_RECURSOS.includes(r));
   try {
-    db.prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)').run(login, senha, perfil, nome);
+    const senhaHash = bcrypt.hashSync(senha, 10);
+    db.prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)').run(login, senhaHash, perfil, nome);
   } catch { return res.status(409).json({ erro: `login "${login}" já existe` }); }
   const li = db.prepare('INSERT OR IGNORE INTO usuario_cidade (login,cidade_id) VALUES (?,?)');
   for (const c of new Set(cidades)) li.run(login, c);
@@ -1033,7 +1071,7 @@ app.put('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
       db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1)
     return res.status(409).json({ erro: 'não é possível rebaixar o último admin' });
   db.prepare('UPDATE usuarios SET senha = COALESCE(?,senha), perfil = ?, nome = ? WHERE login = ?')
-    .run(senha || null, perfil, nome, req.params.login);
+    .run(senha ? bcrypt.hashSync(senha, 10) : null, perfil, nome, req.params.login);
   if (Array.isArray(cidades)) {
     for (const c of cidades)
       if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(c))
@@ -1106,13 +1144,24 @@ app.get('/api/auditoria', auth(), soAdmin, (req, res) =>
 app.get('/api/health', (req, res) => res.json({ ok: true, hoje: R.hojeISO() }));
 
 // Job diário: poda de órfãs + varredura automática (a cada 24h; +1 execução no boot)
-setInterval(() => { try { R.podarNotificacoesOrfas(db); R.varreduraNotificacoes(db); } catch {} }, 24 * 3600 * 1000);
+let jobInterval = null;
+jobInterval = setInterval(() => { try { R.podarNotificacoesOrfas(db); R.varreduraNotificacoes(db); } catch {} }, 24 * 3600 * 1000);
 try {
   const podadas = R.podarNotificacoesOrfas(db);
   if (podadas) console.log(`notificações órfãs removidas: ${podadas}`);
   R.varreduraNotificacoes(db);
 } catch {}
 
-if (require.main === module)
-  app.listen(PORT, () => console.log(`CONTROLE DE LED API on http://localhost:${PORT} (hoje=${R.hojeISO()})`));
+let server = null;
+function encerrar() {
+  if (jobInterval) clearInterval(jobInterval);
+  if (server) server.close();
+  process.exit(0);
+}
+process.on('SIGTERM', encerrar);
+process.on('SIGINT', encerrar);
+
+if (require.main === module) {
+  server = app.listen(PORT, () => console.log(`CONTROLE DE LED API on http://localhost:${PORT} (hoje=${R.hojeISO()})`));
+}
 module.exports = app;

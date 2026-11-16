@@ -82,7 +82,21 @@ export const api = {
     req<{ excluidas: string[]; ignoradas: { id: string; motivo: string }[] }>('/api/campanhas', { method: 'DELETE', body: JSON.stringify({ ids }) }),
   editarCampanha: (id: string, body: any) => req('/api/campanhas/' + id, { method: 'PUT', body: JSON.stringify(body) }),
   exportUrl: (fmt: 'csv' | 'xlsx', cidades = '', q = '', status = '') =>
-    `${API}/api/export/planilha.${fmt}?cidades=${encodeURIComponent(cidades)}&q=${encodeURIComponent(q)}${status ? `&status=${status}` : ''}&token=${localStorage.getItem('led_token') || ''}`,
+    `${API}/api/export/planilha.${fmt}?cidades=${encodeURIComponent(cidades)}&q=${encodeURIComponent(q)}${status ? `&status=${status}` : ''}`,
+  exportar: async (fmt: 'csv' | 'xlsx', cidades = '', q = '', status = '') => {
+    const token = localStorage.getItem('led_token');
+    const resp = await fetch(`${API}/api/export/planilha.${fmt}?cidades=${encodeURIComponent(cidades)}&q=${encodeURIComponent(q)}${status ? `&status=${status}` : ''}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({})) as any).erro || `HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `controle-de-leds.${fmt}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   me: () => req<Me>('/api/me'),
   recursos: () => req<{ id: string; rotulo: string }[]>('/api/recursos'),
   usuarios: () => req<any[]>('/api/usuarios'),
