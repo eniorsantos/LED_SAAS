@@ -18,6 +18,18 @@ if (IS_PROD && JWT_SECRET === 'led-control-dev') {
 }
 app.use(cors());
 app.use(express.json());
+
+// — Headers de segurança —
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;",
+  );
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 app.set('trust proxy', true);
 
 // — Rate limiting simples (login) —
@@ -135,6 +147,7 @@ function temAcesso(user, recurso) {
   return permissoesEfetivas(user.login, user.perfil).includes(recurso);
 }
 const requer = (recurso) => (req, res, next) => {
+  if (!req.user) return res.status(401).json({ erro: 'não autenticado' });
   if (temAcesso(req.user, recurso)) return next();
   return res.status(403).json({ erro: `sem acesso a "${recurso}" para o seu usuário` });
 };
@@ -195,6 +208,7 @@ function espacosTotalLed(ledCodigo, cfg) {
 
 app.post('/api/auth/login', rateLimitLogin, (req, res) => {
   const { login, senha } = req.body || {};
+  if (!login || !senha) return res.status(400).json({ erro: 'login e senha obrigatórios' });
   const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(login);
   if (!u) return res.status(401).json({ erro: 'credenciais inválidas' });
   let senhaValida;
