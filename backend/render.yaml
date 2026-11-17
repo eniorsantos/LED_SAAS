@@ -9,8 +9,10 @@ services:
         generateValue: true
       - key: PORT
         value: 3001
+      - key: DB_PATH
+        value: /data/data.db
       - key: SEED
-        value: "true"
+        value: "false"
       - key: HOJE
         value: ""
     disk:
