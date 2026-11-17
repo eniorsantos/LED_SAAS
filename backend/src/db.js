@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT, quando TEXT NOT NULL DEFAULT (datetime('now')),
   quem TEXT NOT NULL DEFAULT 'anon', oque TEXT NOT NULL, detalhe TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  token TEXT PRIMARY KEY,
+  login TEXT NOT NULL REFERENCES usuarios(login) ON DELETE CASCADE,
+  expira_em TEXT NOT NULL,
+  criada_em TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 function seed() {

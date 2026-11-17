@@ -1,5 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Login from './components/Login';
+import CidadesSecao from './components/CidadesSecao';
+import UsuariosSecao from './components/UsuariosSecao';
+import TemaSecao from './components/TemaSecao';
+import LogoSecao from './components/LogoSecao';
+import BackupSecao from './components/BackupSecao';
+import ImportarSecao from './components/ImportarSecao';
 import {
   PieChart,
   Pie,
@@ -18,7 +24,6 @@ import './index.css';
 import {
   api,
   API,
-  salvarTema,
   FALLBACK_DASH,
   corStatus,
   STATUS_ROTULO,
@@ -195,16 +200,6 @@ export default function App() {
   // Menu de usuários (admin): CRUD + cidades + recursos por usuário
   const [usersLista, setUsersLista] = useState<any[]>([]);
   const [recursosLista, setRecursosLista] = useState<{ id: string; rotulo: string }[]>([]);
-  const [userForm, setUserForm] = useState({
-    login: '',
-    senha: '',
-    perfil: 'visualizador',
-    nome: '',
-    cidades: [] as string[],
-    permissoes: [] as string[],
-  });
-  const [userEditando, setUserEditando] = useState<string | null>(null);
-  const [userMsg, setUserMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   // Múltiplas reservas por campanha (cada uma notifica o início próximo)
   const [resMenu, setResMenu] = useState<{
     campId: string;
@@ -255,45 +250,6 @@ export default function App() {
   const [logo, setLogo] = useState<string | null>(null);
   const [logoPrev, setLogoPrev] = useState<string | null>(null);
   const [logoMsg, setLogoMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
-  const lerLogo = (file: File | undefined) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setLogoMsg({ tipo: 'erro', texto: 'Envie um arquivo de imagem.' });
-      return;
-    }
-    if (file.size > 512 * 1024) {
-      setLogoMsg({ tipo: 'erro', texto: 'Máximo 512KB.' });
-      return;
-    }
-    const rd = new FileReader();
-    rd.onload = () => {
-      setLogoPrev(String(rd.result));
-      setLogoMsg(null);
-    };
-    rd.readAsDataURL(file);
-  };
-  const salvarLogo = async () => {
-    if (!logoPrev) return;
-    setLogoMsg(null);
-    try {
-      await api.salvarLogo(logoPrev);
-      setLogo(logoPrev);
-      setLogoPrev(null);
-      setLogoMsg({ tipo: 'ok', texto: 'Logo salva.' });
-    } catch (e: any) {
-      setLogoMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
-  const removerLogo = async () => {
-    try {
-      await api.removerLogo();
-      setLogo(null);
-      setLogoPrev(null);
-      setLogoMsg({ tipo: 'ok', texto: 'Logo removida.' });
-    } catch (e: any) {
-      setLogoMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
   const [temaMsg, setTemaMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const [configSecao, setConfigSecao] = useState<SecaoConfig>('acesso');
   // Tela cheia de configurações (troca o painel; LEDs/Usuários/Cidades moram aqui)
@@ -417,31 +373,6 @@ export default function App() {
 
   // Gantt: um bloco por campanha COM NOME (veiculando, reservada e vencida) +
   // LIVRE completando — LED nunca parece vazio havendo campanhas
-
-  const importarArquivo = async (file: File | undefined) => {
-    if (!file) return;
-    setImportMsg(null);
-    try {
-      const csv = await file.text();
-      const r = await api.importarPlanilha(csv);
-      const det = r.ignoradas.length
-        ? ` Ignoradas (${r.ignoradas.length}): ` +
-          r.ignoradas
-            .slice(0, 5)
-            .map((x) => `linha ${x.linha} (${x.motivo})`)
-            .join(' · ') +
-          (r.ignoradas.length > 5 ? ' …' : '')
-        : '';
-      const res = r.reservas_criadas ? ` (+${r.reservas_criadas} reserva(s))` : '';
-      setImportMsg({
-        tipo: r.ignoradas.length ? 'erro' : 'ok',
-        texto: `Importadas ${r.criadas} de ${r.total}${res}.${det}`,
-      });
-      carregar();
-    } catch (e: any) {
-      setImportMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
 
   // Opções do filtro de cidade: sempre da API (novas cidades aparecem sozinhas)
   const cidadesOpts = cidades.length
@@ -680,62 +611,14 @@ export default function App() {
   // Dados de acesso para a aba Config (usuários + catálogo de recursos)
 
   const carregarAcesso = useCallback(async () => {
-    setUserMsg(null);
     try {
       const [us, recs] = await Promise.all([api.usuarios(), api.recursos()]);
       setUsersLista(us);
       setRecursosLista(recs);
     } catch (e: any) {
-      setUserMsg({ tipo: 'erro', texto: e.message });
+      // ignore
     }
   }, []);
-  const alternar = (lista: string[], v: string) =>
-    lista.includes(v) ? lista.filter((x) => x !== v) : [...lista, v];
-  const salvarUsuario = async () => {
-    setUserMsg(null);
-    if (!userForm.login.trim() || (!userEditando && !userForm.senha)) {
-      setUserMsg({ tipo: 'erro', texto: 'Preencha login e senha.' });
-      return;
-    }
-    try {
-      if (userEditando) {
-        const body: any = {
-          perfil: userForm.perfil,
-          nome: userForm.nome,
-          cidades: userForm.cidades,
-          permissoes: userForm.permissoes,
-        };
-        if (userForm.senha) body.senha = userForm.senha;
-        await api.editarUsuario(userEditando, body);
-        setUserMsg({ tipo: 'ok', texto: 'Usuário atualizado.' });
-      } else {
-        await api.criarUsuario(userForm);
-        setUserMsg({ tipo: 'ok', texto: `Usuário ${userForm.login} criado.` });
-      }
-      setUserForm({
-        login: '',
-        senha: '',
-        perfil: 'visualizador',
-        nome: '',
-        cidades: [],
-        permissoes: [],
-      });
-      setUserEditando(null);
-      setUsersLista(await api.usuarios());
-      carregar();
-    } catch (e: any) {
-      setUserMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
-  const excluirUsuario = async (login: string) => {
-    if (!confirm(`Excluir o usuário "${login}"?`)) return;
-    try {
-      await api.excluirUsuario(login);
-      setUsersLista(await api.usuarios());
-    } catch (e: any) {
-      setUserMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
 
   // Múltiplas reservas: N períodos futuros por campanha, cada um com toast
   const abrirReservas = async (row: PlanilhaRow) => {
@@ -827,58 +710,6 @@ export default function App() {
   const [resModal, setResModal] = useState(false);
   // Backup: baixa o banco (JSON) e restaura
   const [bkMsg, setBkMsg] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
-  const baixarBackup = async () => {
-    setBkMsg(null);
-    try {
-      const token = localStorage.getItem('led_token');
-      const resp = await fetch(`${API}/api/backup`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const blob = await resp.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `backup-led.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setBkMsg({ tipo: 'ok', texto: 'Backup baixado.' });
-    } catch (e: any) {
-      setBkMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
-  const restaurarBackup = async (file: File | undefined) => {
-    if (!file) return;
-    setBkMsg(null);
-    try {
-      const txt = await file.text();
-      let body: any;
-      try {
-        body = JSON.parse(txt);
-      } catch {
-        throw new Error('arquivo inválido (JSON)');
-      }
-      if (!body.tabelas) throw new Error('arquivo inválido (sem tabelas)');
-      if (!confirm('Restaurar SUBSTITUI todo o banco. Continuar?')) return;
-      const token = localStorage.getItem('led_token');
-      const resp = await fetch(`${API}/api/backup/restaurar`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      const r = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(r.erro || `HTTP ${resp.status}`);
-      setBkMsg({
-        tipo: 'ok',
-        texto: `Restaurado: ${r.contagem.campanhas} campanhas, ${r.contagem.reservas} reservas.`,
-      });
-      carregar();
-    } catch (e: any) {
-      setBkMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
   const conteudoReservas = () => (
     <>
       <div style={{ overflowX: 'auto' }}>
@@ -1117,293 +948,7 @@ export default function App() {
     }
   };
 
-  // Conteúdo compartilhado: Usuários (aba Config + uso interno)
-  const conteudoUsuarios = () => (
-    <>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Login</th>
-              <th>Nome</th>
-              <th>Perfil</th>
-              <th>Cidades</th>
-              <th>Recursos</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {usersLista.map((u: any) => (
-              <tr key={u.login}>
-                <td>
-                  <b>{u.login}</b>
-                </td>
-                <td>{u.nome}</td>
-                <td>{u.perfil}</td>
-                <td style={{ fontSize: '.7rem' }}>
-                  {u.cidades.length ? u.cidades.join(', ') : 'todas'}
-                </td>
-                <td style={{ fontSize: '.7rem' }}>{u.efetivas.join(', ')}</td>
-                <td className="row-actions">
-                  <button
-                    onClick={() => {
-                      setUserEditando(u.login);
-                      setUserForm({
-                        login: u.login,
-                        senha: '',
-                        perfil: u.perfil,
-                        nome: u.nome,
-                        cidades: u.cidades,
-                        permissoes: u.permissoes,
-                      });
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button className="danger" onClick={() => excluirUsuario(u.login)}>
-                    Excluir
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="spot-form">
-        <h2 style={{ fontSize: '.85rem' }}>
-          {userEditando ? `EDITAR ${userEditando}` : '＋ NOVO USUÁRIO'}
-        </h2>
-        <div className="spot-row">
-          <label>
-            Login
-            <input
-              value={userForm.login}
-              disabled={!!userEditando}
-              onChange={(e) => setUserForm({ ...userForm, login: e.target.value })}
-            />
-          </label>
-          <label>
-            {userEditando ? 'Nova senha (vazio mantém)' : 'Senha'}
-            <input
-              type="password"
-              value={userForm.senha}
-              onChange={(e) => setUserForm({ ...userForm, senha: e.target.value })}
-            />
-          </label>
-          <label>
-            Perfil
-            <select
-              value={userForm.perfil}
-              onChange={(e) => setUserForm({ ...userForm, perfil: e.target.value })}
-            >
-              <option value="admin">admin</option>
-              <option value="regional">regional</option>
-              <option value="operador">operador</option>
-              <option value="visualizador">visualizador</option>
-            </select>
-          </label>
-        </div>
-        <label>
-          Nome
-          <input
-            value={userForm.nome}
-            onChange={(e) => setUserForm({ ...userForm, nome: e.target.value })}
-          />
-        </label>
-        <label>
-          Cidades que pode ver (vazio = todas)
-          <div className="perm-grid">
-            {(cidades.length ? cidades : [{ id: 'aracaju', nome: 'Aracaju' }]).map((c: any) => (
-              <label key={c.id} className="check">
-                <input
-                  type="checkbox"
-                  checked={userForm.cidades.includes(c.id)}
-                  onChange={() =>
-                    setUserForm({ ...userForm, cidades: alternar(userForm.cidades, c.id) })
-                  }
-                />
-                {c.nome}
-              </label>
-            ))}
-          </div>
-        </label>
-        <label>
-          Recursos extras além do perfil
-          <div className="perm-grid">
-            {recursosLista.map((r) => (
-              <label key={r.id} className="check">
-                <input
-                  type="checkbox"
-                  checked={userForm.permissoes.includes(r.id)}
-                  onChange={() =>
-                    setUserForm({ ...userForm, permissoes: alternar(userForm.permissoes, r.id) })
-                  }
-                />
-                {r.rotulo}
-              </label>
-            ))}
-          </div>
-        </label>
-        {userMsg && (
-          <p className={`spot-msg ${userMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{userMsg.texto}</p>
-        )}
-        <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-          <button onClick={salvarUsuario}>
-            {userEditando ? 'Salvar alterações' : 'Criar usuário'}
-          </button>
-          {userEditando && (
-            <button
-              className="ghost"
-              onClick={() => {
-                setUserEditando(null);
-                setUserForm({
-                  login: '',
-                  senha: '',
-                  perfil: 'visualizador',
-                  nome: '',
-                  cidades: [],
-                  permissoes: [],
-                });
-              }}
-            >
-              Cancelar edição
-            </button>
-          )}
-        </div>
-      </div>
-    </>
-  );
-
-  // Conteúdo compartilhado: Cidades (aba Config)
-  const conteudoCidades = () => (
-    <>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Nome</th>
-              <th>UF</th>
-              <th>Fuso</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(cidades.length ? cidades : []).map((c: any) => (
-              <tr key={c.id}>
-                <td>
-                  <b>{c.id}</b>
-                </td>
-                <td>{c.nome}</td>
-                <td>{c.uf}</td>
-                <td style={{ fontSize: '.7rem' }}>{c.fuso}</td>
-                <td className="row-actions">
-                  <button
-                    onClick={() => {
-                      setCidEditando(c.id);
-                      setCidForm({
-                        id: c.id,
-                        nome: c.nome,
-                        uf: c.uf || '',
-                        fuso: c.fuso || 'America/Maceio',
-                      });
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button className="danger" onClick={() => excluirCidade(c.id)}>
-                    Excluir
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {cidades.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ color: 'var(--muted)' }}>
-                  Nenhuma cidade cadastrada.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="spot-form">
-        <h2 style={{ fontSize: '.85rem' }}>
-          {cidEditando ? `EDITAR ${cidEditando}` : '＋ NOVA CIDADE'}
-        </h2>
-        <div className="spot-row" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }}>
-          <label>
-            ID
-            <input
-              placeholder="recife"
-              value={cidForm.id}
-              disabled={!!cidEditando}
-              onChange={(e) => setCidForm({ ...cidForm, id: e.target.value.toLowerCase().trim() })}
-            />
-          </label>
-          <label>
-            Nome
-            <input
-              placeholder="Recife"
-              value={cidForm.nome}
-              onChange={(e) => setCidForm({ ...cidForm, nome: e.target.value })}
-            />
-          </label>
-          <label>
-            UF
-            <input
-              placeholder="PE"
-              value={cidForm.uf}
-              onChange={(e) => setCidForm({ ...cidForm, uf: e.target.value.toUpperCase() })}
-            />
-          </label>
-          <label>
-            Fuso
-            <input
-              placeholder="America/Recife"
-              value={cidForm.fuso}
-              onChange={(e) => setCidForm({ ...cidForm, fuso: e.target.value })}
-            />
-          </label>
-        </div>
-        {cidMsg && (
-          <p className={`spot-msg ${cidMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{cidMsg.texto}</p>
-        )}
-        <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-          <button onClick={salvarCidade}>
-            {cidEditando ? 'Salvar alterações' : 'Cadastrar cidade'}
-          </button>
-          {cidEditando && (
-            <button
-              className="ghost"
-              onClick={() => {
-                setCidEditando(null);
-                setCidForm({ id: '', nome: '', uf: '', fuso: 'America/Maceio' });
-              }}
-            >
-              Cancelar edição
-            </button>
-          )}
-        </div>
-      </div>
-    </>
-  );
-
   // Tema: salva paleta e reaplica
-  const salvarTemaAtual = async (restaurar = false) => {
-    setTemaMsg(null);
-    try {
-      const r = await salvarTema(restaurar ? {} : tema.vars, restaurar);
-      setTema((t) => ({ ...t, vars: r.vars }));
-      setTemaMsg({
-        tipo: 'ok',
-        texto: restaurar ? 'Paleta padrão restaurada.' : 'Paleta salva e aplicada.',
-      });
-    } catch (e: any) {
-      setTemaMsg({ tipo: 'erro', texto: e.message });
-    }
-  };
-
   // Menu de LEDs: incluir / editar / excluir (com total de espaços individual)
   const salvarLed = async () => {
     setLedMsg(null);
@@ -2451,168 +1996,58 @@ export default function App() {
             </div>
             {configSecao === 'acesso' && can('usuarios') && (
               <>
-                <p className="sub">
-                  Defina por usuário: perfil, <b>cidades que pode ver</b> e <b>recursos extras</b>{' '}
-                  além do perfil. Sem cidade vinculada = todas.
-                </p>
-                {conteudoUsuarios()}
+                <UsuariosSecao
+                  usersLista={usersLista}
+                  cidades={cidades}
+                  recursosLista={recursosLista}
+                  canUsuarios={can('usuarios')}
+                  carregarAcesso={carregarAcesso}
+                  carregar={carregar}
+                />
               </>
             )}
             {configSecao === 'cidades' && can('cidades') && (
               <>
-                <p className="sub">
-                  Conforme a tabela cidades: id, nome, UF e fuso. Exclusão só de cidade vazia (sem
-                  LEDs).
-                </p>
-                {conteudoCidades()}
+                <CidadesSecao
+                  cidades={cidades}
+                  canCidades={can('cidades')}
+                  carregar={carregar}
+                />
               </>
             )}
-            {configSecao === 'logo' && can('config') && (
-              <>
-                <p className="sub">
-                  Logo da empresa no lugar do ícone, em tamanho fixo (38px), persistida no back-end.
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                  {logoPrev || logo ? (
-                    <img className="brand-logo" src={(logoPrev || logo) as string} alt="prévia" />
-                  ) : (
-                    <div
-                      className="icon"
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        background: 'var(--panel2)',
-                        border: '1px solid var(--border)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      —
-                    </div>
-                  )}
-                  <div className="toolbar" style={{ margin: 0 }}>
-                    <label className="toolbar-upload" title="PNG, JPG, GIF, WebP ou SVG até 512KB">
-                      Escolher imagem
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        onChange={(e) => {
-                          lerLogo(e.target.files?.[0]);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-                {logoMsg && (
-                  <p className={`spot-msg ${logoMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
-                    {logoMsg.texto}
-                  </p>
-                )}
-                <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-                  <button disabled={!logoPrev} onClick={salvarLogo}>
-                    Salvar logo
-                  </button>
-                  {(logo || logoPrev) && (
-                    <button className="ghost" onClick={removerLogo}>
-                      Remover
-                    </button>
-                  )}
-                </div>
-              </>
+            {can('config') && configSecao === 'logo' && (
+              <LogoSecao
+                logo={logo}
+                logoPrev={logoPrev}
+                setLogo={setLogo}
+                setLogoPrev={setLogoPrev}
+                logoMsg={logoMsg}
+                setLogoMsg={setLogoMsg}
+                canConfig={can('config')}
+              />
             )}
-            {configSecao === 'importar' && can('importar') && (
-              <>
-                <p className="sub">
-                  Planilha no padrão
-                  Cidade;LED;Anunciante;Início;Fim;ReservaN_Anunciante;ReservaN_Início;ReservaN_Fim
-                  — datas BR, ISO ou por extenso.
-                </p>
-                <div className="toolbar" style={{ marginBottom: 0 }}>
-                  <label className="toolbar-upload" title="Importar planilha">
-                    ⬆ Importar planilha
-                    <input
-                      type="file"
-                      accept=".csv,.txt"
-                      hidden
-                      onChange={(e) => {
-                        importarArquivo(e.target.files?.[0]);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                  <a href={api.modeloImportUrl}>
-                    <button className="ghost" type="button">
-                      ⬇ Modelo
-                    </button>
-                  </a>
-                </div>
-                {importMsg && <p className={`spot-msg ${importMsg.tipo}`}>{importMsg.texto}</p>}
-              </>
+            {can('importar') && configSecao === 'importar' && (
+              <ImportarSecao
+                importMsg={importMsg}
+                setImportMsg={setImportMsg}
+                canImportar={can('importar')}
+              />
             )}
-            {configSecao === 'backup' && can('config') && (
-              <>
-                <p className="sub">
-                  Baixa o banco inteiro em JSON; restaurar <b>substitui tudo</b> — faça um backup
-                  antes.
-                </p>
-                <div className="toolbar" style={{ marginBottom: 0 }}>
-                  <button onClick={baixarBackup}>⬇ Baixar backup</button>
-                  <label className="toolbar-upload" title="Restaurar a partir de um backup JSON">
-                    ⬆ Restaurar backup
-                    <input
-                      type="file"
-                      accept=".json,application/json"
-                      hidden
-                      onChange={(e) => {
-                        restaurarBackup(e.target.files?.[0]);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                </div>
-                {bkMsg && (
-                  <p className={`spot-msg ${bkMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>{bkMsg.texto}</p>
-                )}
-              </>
+            {can('config') && configSecao === 'backup' && (
+              <BackupSecao
+                bkMsg={bkMsg}
+                setBkMsg={setBkMsg}
+                canConfig={can('config')}
+              />
             )}
-            {configSecao === 'tema' && can('config') && (
-              <>
-                <p className="sub">
-                  Paleta do projeto: fundo, fontes, destaques e gráficos. Aplica na hora em todo o
-                  painel.
-                </p>
-                <div className="perm-grid">
-                  {Object.keys(tema.rotulos).map((k) => (
-                    <label key={k} className="check">
-                      {tema.rotulos[k]}
-                      <input
-                        type="color"
-                        value={tema.vars[k] || '#000000'}
-                        onChange={(e) =>
-                          setTema((t) => ({ ...t, vars: { ...t.vars, [k]: e.target.value } }))
-                        }
-                      />
-                      <small style={{ color: 'var(--muted)' }}>{tema.vars[k]}</small>
-                    </label>
-                  ))}
-                </div>
-                {Object.keys(tema.vars).length === 0 && <p className="sub">Carregando paleta…</p>}
-                {temaMsg && (
-                  <p className={`spot-msg ${temaMsg.tipo === 'ok' ? 'ok' : 'erro'}`}>
-                    {temaMsg.texto}
-                  </p>
-                )}
-                <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
-                  <button onClick={() => salvarTemaAtual(false)}>Salvar cores</button>
-                  <button className="ghost" onClick={() => salvarTemaAtual(true)}>
-                    Restaurar padrão
-                  </button>
-                </div>
-              </>
+            {can('config') && configSecao === 'tema' && (
+              <TemaSecao
+                tema={tema}
+                setTema={setTema}
+                temaMsg={temaMsg}
+                setTemaMsg={setTemaMsg}
+                canConfig={can('config')}
+              />
             )}
           </div>
         )}

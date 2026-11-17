@@ -216,8 +216,68 @@ app.post('/api/auth/login', rateLimitLogin, (req, res) => {
     expiresIn: '12h',
   });
   log(u.login, 'login', u.perfil);
-  res.json({ token, perfil: u.perfil, nome: u.nome, login: u.login });
+  // Refresh token: expira em 7 dias
+  const refreshToken = jwt.sign({ login: u.login, tipo: 'refresh' }, JWT_SECRET, {
+    expiresIn: '7d',
+  });
+  db.prepare(
+    'INSERT OR REPLACE INTO refresh_tokens (token, login, expira_em) VALUES (?, ?, ?)',
+  ).run(refreshToken, u.login, new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString());
+  res.json({
+    token,
+    refresh_token: refreshToken,
+    perfil: u.perfil,
+    nome: u.nome,
+    login: u.login,
+  });
 });
+
+// — Refresh token: renova o access token sem solicitar senha —
+app.post('/api/auth/refresh', rateLimitLogin, (req, res) => {
+  const { refresh_token } = req.body || {};
+  if (!refresh_token) {
+    return res.status(400).json({ erro: 'refresh_token obrigatório' });
+  }
+  const row = db.prepare('SELECT * FROM refresh_tokens WHERE token = ?').get(refresh_token);
+  if (!row) {
+    return res.status(401).json({ erro: 'refresh_token inválido ou expirado' });
+  }
+  const expira = new Date(row.expira_em).getTime();
+  if (Date.now() > expira) {
+    db.prepare('DELETE FROM refresh_tokens WHERE token = ?').run(refresh_token);
+    return res.status(401).json({ erro: 'refresh_token expirado' });
+  }
+  const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(row.login);
+  if (!u) {
+    return res.status(401).json({ erro: 'usuário não encontrado' });
+  }
+  const token = jwt.sign({ login: u.login, perfil: u.perfil, nome: u.nome }, JWT_SECRET, {
+    expiresIn: '12h',
+  });
+  // Renova o refresh_token (rotação)
+  const novoRefresh = jwt.sign({ login: u.login, tipo: 'refresh' }, JWT_SECRET, {
+    expiresIn: '7d',
+  });
+  db.prepare('UPDATE refresh_tokens SET token = ?, expira_em = ? WHERE token = ?').run(
+    novoRefresh,
+    new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    refresh_token,
+  );
+  res.json({
+    token,
+    refresh_token: novoRefresh,
+    perfil: u.perfil,
+    nome: u.nome,
+    login: u.login,
+  });
+});
+
+// — Limpeza de refresh tokens expirados (executa no boot) —
+try {
+  db.prepare('DELETE FROM refresh_tokens WHERE expira_em < ?').run(new Date().toISOString());
+} catch {
+  // ignore: limpeza opcional não deve impedir o boot
+}
 
 // — Config N dias (§3, configurável) —
 app.get('/api/config', (req, res) => res.json({ hoje: R.hojeISO(), ...R.getConfig(db) }));
