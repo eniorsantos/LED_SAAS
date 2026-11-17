@@ -181,8 +181,88 @@ Este documento consolida todas as correções de segurança, qualidade de códig
 
 ## 9. Próximas Etapas Sugeridas
 
-1. **Refatorar componentes restantes do `App.tsx`** (tema, logo, backup, importar, usuários, cidades, LEDs, reservas) — reduzir o monolítico de ~3.100 linhas.
-2. **Adicionar refresh token** para JWT (atualmente expira em 12h sem rota de refresh).
-3. **Integrar `db.supabase.js` ao `index.js`** — requer reescrita para `async/await` para usar PostgreSQL/Supabase em produção.
-4. **Testes de componente front-end** (React Testing Library ou Vitest).
-5. **Remover `data.db` do repositório** (já está no `.gitignore` mas o arquivo existe fisicamente).
+1. **Integrar `db.supabase.js` ao `index.js`** — requer reescrita para `async/await` para usar PostgreSQL/Supabase em produção.
+2. **Remover `data.db` do repositório** (já está no `.gitignore` mas o arquivo existe fisicamente).
+
+---
+
+## 10. Extração de Componentes do Front-end
+
+### 10.1 Componentes extraídos do App.tsx
+
+O `App.tsx` era um monolítico de ~3.100 linhas. Foram extraídos 8 componentes isolados, cada um com props tipadas:
+
+| Componente | Arquivo | Responsabilidade |
+|------------|---------|------------------|
+| Login | `frontend/src/components/Login.tsx` | Tela de autenticação |
+| TemaSecao | `frontend/src/components/TemaSecao.tsx` | Editor de paleta de cores |
+| LogoSecao | `frontend/src/components/LogoSecao.tsx` | Upload e gestão da logo |
+| BackupSecao | `frontend/src/components/BackupSecao.tsx` | Backup/restauração JSON do banco |
+| ImportarSecao | `frontend/src/components/ImportarSecao.tsx` | Importação de planilha CSV |
+| UsuariosSecao | `frontend/src/components/UsuariosSecao.tsx` | CRUD de usuários e permissões |
+| CidadesSecao | `frontend/src/components/CidadesSecao.tsx` | CRUD de cidades |
+| LedsSecao | `frontend/src/components/LedsSecao.tsx` | CRUD de painéis LED |
+
+**Impacto:** redução do acoplamento no `App.tsx`, componentes reutilizáveis e testáveis isoladamente. Funções não utilizadas (`fazerLogin`, `salvarTemaAtual`, `salvarLogo`, `removerLogo`, `baixarBackup`, `restaurarBackup`, `importarArquivo`, `salvarCidade`, `conteudoUsuarios`, `conteudoCidades`, alternar/salvarUsuario/excluirUsuario do escopo do App) foram removidas do `App.tsx`.
+
+### 10.2 Testes de Componente
+
+**Arquivos:**
+- `frontend/src/components/Login.test.tsx` — 9 testes
+- `frontend/vitest.config.ts` — configuração Vitest + jsdom
+- `frontend/src/setupTests.ts` — setup do @testing-library/jest-dom
+- `frontend/package.json` — scripts `test` e `test:watch`
+
+**Cobertura dos testes (Login):**
+- Renderiza elementos principais (título, inputs, botão)
+- Renderiza logo quando fornecida, ícone padrão caso contrário
+- Atualiza valores de login e senha ao digitar
+- Chama `onLogin` com credenciais válidas
+- Desabilita botão durante o login
+- Mostra erro quando o login falha
+- Não chama `onLogin` quando o login falha
+
+**Resultado:** 9/9 testes passando.
+
+---
+
+## 11. Refresh Token para JWT
+
+**Arquivos:** `backend/src/db.js`, `backend/src/index.js`
+
+**Problema:** O access token expira em 12h sem rota de renovação, forçando re-login frequente.
+
+**Correção:**
+- Nova tabela `refresh_tokens` no banco (`token`, `login`, `expira_em`, `criada_em`)
+- Endpoint `POST /api/auth/refresh` — renova o access token usando refresh token com rotação (novo refresh token emitido a cada uso)
+- Login agora retorna `{ token, refresh_token, perfil, nome, login }`
+- Access token expira em 12h; refresh token expira em 7 dias
+- Limpeza automática de refresh tokens expirados no boot da API
+
+---
+
+## 12. Validações Finais
+
+| Teste | Comando | Resultado |
+|-------|---------|-----------|
+| Smoke test (spec §§1–9) | `cd backend; $env:HOJE='2026-10-25'; $env:SEED='true'; node test/smoke.js` | `SMOKE OK` |
+| Testes de unidade (backend) | `cd backend; node test/unit.js` | `22/22 passando` |
+| Testes de componente (frontend) | `cd frontend; npm run test` | `9/9 passando` |
+| Lint backend | `cd backend; npm run lint` | `0 erros` |
+| Lint frontend | `cd frontend; npm run lint` | `0 erros` |
+| Build front-end | `cd frontend; npm run build` | `✓ built` |
+
+---
+
+## 13. Commits Realizados (sessão completa)
+
+| Commit | Descrição |
+|--------|-----------|
+| `b1a163e` | sec: corrige vulnerabilidades críticas (senhas bcrypt, JWT_SECRET, rate limiting, token na URL) |
+| `d777fa5` | lint: adiciona ESLint + Prettier, corrige formatação e React hooks |
+| `4448712` | fix: corrige status agendada/reservada invertido + 22 testes de unidade |
+| `37641ef` | docs: adiciona Swagger/OpenAPI para a API |
+| `de02cdd` | refactor: extrai componente Login do App.tsx |
+| `752e9b5` | docs: registra todas as correções aplicadas |
+| `e4e60a6` | feat: extrai componentes, adiciona refresh token e testes de componente |
+
