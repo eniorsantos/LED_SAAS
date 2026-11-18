@@ -92,7 +92,7 @@ Sem API no ar, o painel mostra telas vazias com aviso (badge `OFFLINE`).
 1. Crie um projeto no Supabase e rode o SQL de `supabase/schema.sql` no editor SQL.
 2. No back-end (Render), defina `DATABASE_URL` com a connection string do Supabase (Pooler).
 3. Instale a dependência: `npm install pg` (já adicionada ao `package.json`).
-4. Em `src/index.js`, substitua `require('./db')` por `require('./db.supabase')` — o adaptador `db.supabase.js` expõe a mesma API de operações, mas assíncrona (`pg`).
+4. Em `src/index.js`, substitua `require('./db')` por `require('./db.adapter')` — o adaptador `db.adapter.js` expõe a mesma API de operações, mas assíncrona (`pg`) quando `DATABASE_URL` está definido, ou `better-sqlite3` (síncrono) quando não está.
 5. Se não quiser migrar agora, continue com SQLite + disco persistente no Render.
 
 ### Login demo (após o deploy)

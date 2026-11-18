@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger');
 const XLSX = require('xlsx');
-const db = require('./db');
+const db = require('./db.adapter');
 const R = require('./regras');
 
 const app = express();
@@ -59,8 +59,10 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
-const log = (quem, oque, detalhe = '') =>
-  db.prepare('INSERT INTO auditoria (quem,oque,detalhe) VALUES (?,?,?)').run(quem, oque, detalhe);
+const log = async (quem, oque, detalhe = '') =>
+  await db
+    .prepare('INSERT INTO auditoria (quem,oque,detalhe) VALUES (?,?,?)')
+    .run(quem, oque, detalhe);
 
 // — Auth (spec §9.2: login/senha; SSO/2FA futuros) —
 function auth(required = true) {
@@ -206,10 +208,10 @@ function espacosTotalLed(ledCodigo, cfg) {
     : cfg.max_clientes_por_led;
 }
 
-app.post('/api/auth/login', rateLimitLogin, (req, res) => {
+app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
   const { login, senha } = req.body || {};
   if (!login || !senha) return res.status(400).json({ erro: 'login e senha obrigatórios' });
-  const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(login);
+  const u = await db.prepare('SELECT * FROM usuarios WHERE login = ?').get(login);
   if (!u) return res.status(401).json({ erro: 'credenciais inválidas' });
   let senhaValida;
   try {
@@ -223,13 +225,12 @@ app.post('/api/auth/login', rateLimitLogin, (req, res) => {
   // Migração transparente: se a senha ainda está em texto plano, reescreve com hash
   if (!u.senha.startsWith('$2b$')) {
     const hash = bcrypt.hashSync(senha, 10);
-    db.prepare('UPDATE usuarios SET senha = ? WHERE login = ?').run(hash, login);
+    await db.prepare('UPDATE usuarios SET senha = ? WHERE login = ?').run(hash, login);
     log(u.login, 'login.password_migrated', u.perfil);
   }
   const token = jwt.sign({ login: u.login, perfil: u.perfil, nome: u.nome }, JWT_SECRET, {
     expiresIn: '12h',
   });
-  log(u.login, 'login', u.perfil);
   // Refresh token: expira em 7 dias
   const refreshToken = jwt.sign({ login: u.login, tipo: 'refresh' }, JWT_SECRET, {
     expiresIn: '7d',
@@ -247,21 +248,21 @@ app.post('/api/auth/login', rateLimitLogin, (req, res) => {
 });
 
 // — Refresh token: renova o access token sem solicitar senha —
-app.post('/api/auth/refresh', rateLimitLogin, (req, res) => {
+app.post('/api/auth/refresh', rateLimitLogin, async (req, res) => {
   const { refresh_token } = req.body || {};
   if (!refresh_token) {
     return res.status(400).json({ erro: 'refresh_token obrigatório' });
   }
-  const row = db.prepare('SELECT * FROM refresh_tokens WHERE token = ?').get(refresh_token);
+  const row = await db.prepare('SELECT * FROM refresh_tokens WHERE token = ?').get(refresh_token);
   if (!row) {
     return res.status(401).json({ erro: 'refresh_token inválido ou expirado' });
   }
   const expira = new Date(row.expira_em).getTime();
   if (Date.now() > expira) {
-    db.prepare('DELETE FROM refresh_tokens WHERE token = ?').run(refresh_token);
+    await db.prepare('DELETE FROM refresh_tokens WHERE token = ?').run(refresh_token);
     return res.status(401).json({ erro: 'refresh_token expirado' });
   }
-  const u = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(row.login);
+  const u = await db.prepare('SELECT * FROM usuarios WHERE login = ?').get(row.login);
   if (!u) {
     return res.status(401).json({ erro: 'usuário não encontrado' });
   }
@@ -272,11 +273,9 @@ app.post('/api/auth/refresh', rateLimitLogin, (req, res) => {
   const novoRefresh = jwt.sign({ login: u.login, tipo: 'refresh' }, JWT_SECRET, {
     expiresIn: '7d',
   });
-  db.prepare('UPDATE refresh_tokens SET token = ?, expira_em = ? WHERE token = ?').run(
-    novoRefresh,
-    new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    refresh_token,
-  );
+  await db
+    .prepare('UPDATE refresh_tokens SET token = ?, expira_em = ? WHERE token = ?')
+    .run(novoRefresh, new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(), refresh_token);
   res.json({
     token,
     refresh_token: novoRefresh,
@@ -287,91 +286,94 @@ app.post('/api/auth/refresh', rateLimitLogin, (req, res) => {
 });
 
 // — Limpeza de refresh tokens expirados (executa no boot) —
-try {
-  db.prepare('DELETE FROM refresh_tokens WHERE expira_em < ?').run(new Date().toISOString());
-} catch {
-  // ignore: limpeza opcional não deve impedir o boot
-}
+(async () => {
+  try {
+    await db
+      .prepare('DELETE FROM refresh_tokens WHERE expira_em < ?')
+      .run(new Date().toISOString());
+  } catch {
+    // ignore: limpeza opcional não deve impedir o boot
+  }
+})();
 
 // — Config N dias (§3, configurável) —
-app.get('/api/config', (req, res) => res.json({ hoje: R.hojeISO(), ...R.getConfig(db) }));
-app.put('/api/config', auth(), requer('config'), (req, res) => {
+app.get('/api/config', async (req, res) => res.json({ hoje: R.hojeISO(), ...R.getConfig(db) }));
+app.put('/api/config', auth(), requer('config'), async (req, res) => {
   const { n_inicio_proximo, n_vencimento_proximo, max_clientes_por_led } = req.body || {};
   if (
     max_clientes_por_led !== undefined &&
     (!Number.isInteger(max_clientes_por_led) || max_clientes_por_led < 1)
   )
     return res.status(400).json({ erro: 'max_clientes_por_led deve ser inteiro >= 1' });
-  db.prepare(
-    'UPDATE config SET n_inicio_proximo = COALESCE(?,n_inicio_proximo), n_vencimento_proximo = COALESCE(?,n_vencimento_proximo), max_clientes_por_led = COALESCE(?,max_clientes_por_led) WHERE id = 1',
-  ).run(n_inicio_proximo ?? null, n_vencimento_proximo ?? null, max_clientes_por_led ?? null);
-  log(req.user.login, 'config.update', JSON.stringify(req.body));
+  await db
+    .prepare(
+      'UPDATE config SET n_inicio_proximo = COALESCE(?,n_inicio_proximo), n_vencimento_proximo = COALESCE(?,n_vencimento_proximo), max_clientes_por_led = COALESCE(?,max_clientes_por_led) WHERE id = 1',
+    )
+    .run(n_inicio_proximo ?? null, n_vencimento_proximo ?? null, max_clientes_por_led ?? null);
+  await log(req.user.login, 'config.update', JSON.stringify(req.body));
   res.json(R.getConfig(db));
 });
 
 // — Cidades (§8.1 CRUD: nome, UF, fuso) —
-app.get('/api/cidades', (req, res) =>
-  res.json(db.prepare('SELECT * FROM cidades ORDER BY nome').all()),
+app.get('/api/cidades', async (req, res) =>
+  res.json(await db.prepare('SELECT * FROM cidades ORDER BY nome').all()),
 );
-app.post('/api/cidades', auth(), requer('cidades'), (req, res) => {
+app.post('/api/cidades', auth(), requer('cidades'), async (req, res) => {
   const { id, nome, uf = '', fuso = 'America/Maceio' } = req.body || {};
   if (!id || !nome) return res.status(400).json({ erro: 'id e nome obrigatórios' });
   try {
-    db.prepare('INSERT INTO cidades (id,nome,uf,fuso) VALUES (?,?,?,?)').run(
-      String(id).trim().toLowerCase(),
-      nome,
-      uf,
-      fuso,
-    );
+    await db
+      .prepare('INSERT INTO cidades (id,nome,uf,fuso) VALUES (?,?,?,?)')
+      .run(String(id).trim().toLowerCase(), nome, uf, fuso);
   } catch {
     return res.status(409).json({ erro: `cidade "${id}" já cadastrada` });
   }
   log(req.user.login, 'cidade.create', id);
   res.status(201).json({ id, nome, uf, fuso });
 });
-app.put('/api/cidades/:id', auth(), requer('cidades'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM cidades WHERE id = ?').get(req.params.id);
+app.put('/api/cidades/:id', auth(), requer('cidades'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM cidades WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'cidade não encontrada' });
   const { nome = cur.nome, uf = cur.uf, fuso = cur.fuso } = req.body || {};
   if (!nome) return res.status(400).json({ erro: 'nome obrigatório' });
-  db.prepare('UPDATE cidades SET nome = ?, uf = ?, fuso = ? WHERE id = ?').run(
-    nome,
-    uf,
-    fuso,
-    req.params.id,
-  );
+  await db
+    .prepare('UPDATE cidades SET nome = ?, uf = ?, fuso = ? WHERE id = ?')
+    .run(nome, uf, fuso, req.params.id);
   log(req.user.login, 'cidade.update', req.params.id);
   res.json({ ok: true });
 });
-app.delete('/api/cidades/:id', auth(), requer('cidades'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM cidades WHERE id = ?').get(req.params.id);
+app.delete('/api/cidades/:id', auth(), requer('cidades'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM cidades WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'cidade não encontrada' });
-  const n = db.prepare('SELECT COUNT(*) v FROM leds WHERE cidade_id = ?').get(req.params.id).v;
+  const n = await db.prepare('SELECT COUNT(*) v FROM leds WHERE cidade_id = ?').get(req.params.id)
+    .v;
   if (n > 0)
     return res.status(409).json({ erro: `cidade possui ${n} LED(s) — exclua ou transfira antes` });
-  db.prepare('DELETE FROM usuario_cidade WHERE cidade_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM cidades WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM usuario_cidade WHERE cidade_id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM cidades WHERE id = ?').run(req.params.id);
   log(req.user.login, 'cidade.delete', req.params.id);
   res.json({ ok: true });
 });
 
 // — LEDs (menu de cadastro: incluir, editar, excluir) —
-app.get('/api/leds', authOpcional, (req, res) => {
+app.get('/api/leds', authOpcional, async (req, res) => {
   const filtro = filtroEfetivo(req);
   const cfg = R.getConfig(db),
     hoje = R.hojeISO();
-  let rows = db.prepare('SELECT * FROM leds ORDER BY codigo').all();
+  let rows = await db.prepare('SELECT * FROM leds ORDER BY codigo').all();
   if (filtro.length) rows = rows.filter((l) => filtro.includes(l.cidade_id));
   res.json(
-    rows.map((l) => ({
-      ...l,
-      espacos_usados: R.espacosUsados(db, l.codigo, hoje).length,
-      espacos_total: espacosTotalLed(l.codigo, cfg),
-      espacos_proprio: l.espacos_total ?? null,
-    })),
+    await Promise.all(
+      rows.map(async (l) => ({
+        ...l,
+        espacos_usados: R.espacosUsados(db, l.codigo, hoje).length,
+        espacos_total: espacosTotalLed(l.codigo, cfg),
+        espacos_proprio: l.espacos_total ?? null,
+      })),
+    ),
   );
 });
-app.post('/api/leds', auth(), requer('leds'), (req, res) => {
+app.post('/api/leds', auth(), requer('leds'), async (req, res) => {
   const { codigo, endereco, cidade_id, espacos_total } = req.body || {};
   if (!codigo || !endereco || !cidade_id)
     return res.status(400).json({ erro: 'codigo, endereco, cidade_id obrigatórios' });
@@ -384,7 +386,7 @@ app.post('/api/leds', auth(), requer('leds'), (req, res) => {
     return res
       .status(400)
       .json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
-  if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id))
+  if (!(await db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id)))
     return res.status(400).json({ erro: `cidade "${cidade_id}" não cadastrada` });
   if (!escopoCidadeOk(req.user, cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const esp =
@@ -392,20 +394,17 @@ app.post('/api/leds', auth(), requer('leds'), (req, res) => {
       ? null
       : espacos_total;
   try {
-    db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(
-      codigo.trim(),
-      endereco,
-      cidade_id,
-      esp,
-    );
+    await db
+      .prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)')
+      .run(codigo.trim(), endereco, cidade_id, esp);
   } catch {
     return res.status(409).json({ erro: `LED "${codigo}" já cadastrado` });
   }
   log(req.user.login, 'led.create', codigo);
   res.status(201).json({ codigo, endereco, cidade_id, espacos_total: esp });
 });
-app.put('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
+app.put('/api/leds/:codigo', auth(), requer('leds'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
   if (!cur) return res.status(404).json({ erro: 'LED não encontrado' });
   const {
     endereco = cur.endereco,
@@ -423,7 +422,7 @@ app.put('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
     return res
       .status(400)
       .json({ erro: 'espacos_total deve ser inteiro >= 1 (ou vazio = padrão)' });
-  if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id))
+  if (!(await db.prepare('SELECT * FROM cidades WHERE id = ?').get(cidade_id)))
     return res.status(400).json({ erro: `cidade "${cidade_id}" não cadastrada` });
   if (!escopoCidadeOk(req.user, cur.cidade_id) || !escopoCidadeOk(req.user, cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
@@ -434,23 +433,18 @@ app.put('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
       : espacos_total === null || espacos_total === ''
         ? null
         : espacos_total;
-  const tx = db.transaction(() => {
+  const tx = await db.transaction(async () => {
     if (renomear) {
-      db.prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)').run(
-        novo_codigo,
-        endereco,
-        cidade_id,
-        esp,
-      );
-      db.prepare('UPDATE campanhas SET led_codigo = ? WHERE led_codigo = ?').run(
-        novo_codigo,
-        cur.codigo,
-      );
-      db.prepare('UPDATE programacoes SET led_codigo = ? WHERE led_codigo = ?').run(
-        novo_codigo,
-        cur.codigo,
-      );
-      db.prepare('DELETE FROM leds WHERE codigo = ?').run(cur.codigo);
+      await db
+        .prepare('INSERT INTO leds (codigo,endereco,cidade_id,espacos_total) VALUES (?,?,?,?)')
+        .run(novo_codigo, endereco, cidade_id, esp);
+      await db
+        .prepare('UPDATE campanhas SET led_codigo = ? WHERE led_codigo = ?')
+        .run(novo_codigo, cur.codigo);
+      await db
+        .prepare('UPDATE programacoes SET led_codigo = ? WHERE led_codigo = ?')
+        .run(novo_codigo, cur.codigo);
+      await db.prepare('DELETE FROM leds WHERE codigo = ?').run(cur.codigo);
     } else {
       db.prepare(
         'UPDATE leds SET endereco = ?, cidade_id = ?, espacos_total = ? WHERE codigo = ?',
@@ -465,8 +459,8 @@ app.put('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
   log(req.user.login, 'led.update', `${req.params.codigo}${renomear ? ' → ' + novo_codigo : ''}`);
   res.json({ ok: true, codigo: novo_codigo });
 });
-app.delete('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
+app.delete('/api/leds/:codigo', auth(), requer('leds'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM leds WHERE codigo = ?').get(req.params.codigo);
   if (!cur) return res.status(404).json({ erro: 'LED não encontrado' });
   if (!escopoCidadeOk(req.user, cur.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const n = db
@@ -476,15 +470,15 @@ app.delete('/api/leds/:codigo', auth(), requer('leds'), (req, res) => {
     return res
       .status(409)
       .json({ erro: `LED possui ${n} campanha(s) — exclua ou transfira antes` });
-  db.prepare('DELETE FROM programacoes WHERE led_codigo = ?').run(req.params.codigo);
-  db.prepare('DELETE FROM leds WHERE codigo = ?').run(req.params.codigo);
+  await db.prepare('DELETE FROM programacoes WHERE led_codigo = ?').run(req.params.codigo);
+  await db.prepare('DELETE FROM leds WHERE codigo = ?').run(req.params.codigo);
   log(req.user.login, 'led.delete', req.params.codigo);
   res.json({ ok: true });
 });
 
 // — Anunciantes —
-app.get('/api/anunciantes', (req, res) =>
-  res.json(db.prepare('SELECT * FROM anunciantes ORDER BY nome').all()),
+app.get('/api/anunciantes', async (req, res) =>
+  res.json(await db.prepare('SELECT * FROM anunciantes ORDER BY nome').all()),
 );
 
 // — Campanhas (validação de datas §1: "31/9" inválida) —
@@ -492,17 +486,17 @@ function comStatus(rows) {
   const cfg = R.getConfig(db);
   return rows.map((c) => ({ ...c, status: R.statusCampanha(c, cfg) }));
 }
-app.get('/api/campanhas', authOpcional, (req, res) => {
+app.get('/api/campanhas', authOpcional, async (req, res) => {
   const filtro = filtroEfetivo(req);
   const { led, status } = req.query;
-  let rows = db.prepare('SELECT * FROM campanhas ORDER BY inicio').all();
+  let rows = await db.prepare('SELECT * FROM campanhas ORDER BY inicio').all();
   if (filtro.length) rows = rows.filter((c) => filtro.includes(c.cidade_id));
   if (led) rows = rows.filter((c) => c.led_codigo === led);
   let out = comStatus(rows);
   if (status) out = out.filter((c) => c.status === status);
   res.json(out);
 });
-app.post('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
+app.post('/api/campanhas', auth(), requer('campanhas_editar'), async (req, res) => {
   const { id, cidade_id, led_codigo, inicio, fim, reservada = 0 } = req.body || {};
   const anunciante = R.normalizarAnunciante(req.body?.anunciante);
   if (!id || !cidade_id || !led_codigo || !anunciante || !inicio || !fim)
@@ -531,16 +525,16 @@ app.post('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
       erro: `LED ${led_codigo} lotado: ${usados.length}/${totalEsp} espaços ocupados`,
       espacos: { usados: usados.length, total: totalEsp },
     });
-  db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
+  await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
   db.prepare(
     'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
   ).run(id, cidade_id, led_codigo, anunciante, inicio, fim, reservada ? 1 : 0);
   log(req.user.login, 'campanha.create', id);
   res.status(201).json({ ok: true, id });
 });
-app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => {
+app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), async (req, res) => {
   // edição inline da planilha (§4.4)
-  const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
+  const cur = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'não encontrada' });
   const nx = { ...cur, ...req.body };
   if (req.body.anunciante !== undefined)
@@ -571,7 +565,7 @@ app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => 
         espacos: { usados: usados.length, total: total2 },
       });
   }
-  db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
+  await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
   db.prepare(
     'UPDATE campanhas SET anunciante=?,inicio=?,fim=?,reservada=?,led_codigo=?,cidade_id=? WHERE id=?',
   ).run(
@@ -586,16 +580,16 @@ app.put('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => 
   log(req.user.login, 'campanha.update', req.params.id);
   res.json({ ok: true });
 });
-app.delete('/api/campanhas/:id', auth(), requer('campanhas_editar'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
+app.delete('/api/campanhas/:id', auth(), requer('campanhas_editar'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'não encontrada' });
   if (!escopoCidadeOk(req.user, cur.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
-  db.prepare('DELETE FROM campanhas WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM campanhas WHERE id = ?').run(req.params.id);
   log(req.user.login, 'campanha.delete', req.params.id);
   res.json({ ok: true });
 });
 // Exclusão em lote: {ids: []} — exclui as do escopo, lista as ignoradas
-app.delete('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
+app.delete('/api/campanhas', auth(), requer('campanhas_editar'), async (req, res) => {
   const { ids } = req.body || {};
   if (!Array.isArray(ids) || !ids.length)
     return res.status(400).json({ erro: 'envie {ids: [...]}' });
@@ -603,7 +597,7 @@ app.delete('/api/campanhas', auth(), requer('campanhas_editar'), (req, res) => {
     ignoradas = [];
   const del = db.prepare('DELETE FROM campanhas WHERE id = ?');
   for (const id of new Set(ids)) {
-    const cur = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(id);
+    const cur = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(id);
     if (!cur) {
       ignoradas.push({ id, motivo: 'não encontrada' });
       continue;
@@ -632,16 +626,16 @@ function reservasDaCampanha(campanhaId, anunciantePadrao) {
     .map((r) => ({ ...r, anunciante: r.anunciante || anunciantePadrao || '' }));
 }
 // (rotação: reservas convivem com campanha e entre si — sem checagem de choque)
-app.get('/api/campanhas/:id/reservas', authOpcional, (req, res) => {
-  const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
+app.get('/api/campanhas/:id/reservas', authOpcional, async (req, res) => {
+  const camp = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!camp) return res.status(404).json({ erro: 'campanha não encontrada' });
   const filtro = filtroEfetivo(req);
   if (filtro.length && !filtro.includes(camp.cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
   res.json(reservasDaCampanha(req.params.id, camp.anunciante));
 });
-app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), (req, res) => {
-  const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
+app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), async (req, res) => {
+  const camp = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(req.params.id);
   if (!camp) return res.status(404).json({ erro: 'campanha não encontrada' });
   if (!escopoCidadeOk(req.user, camp.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const { inicio, fim } = req.body || {};
@@ -651,7 +645,7 @@ app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), (req, res) =
   const anu = R.normalizarAnunciante(req.body?.anunciante) || camp.anunciante;
   // rotação: reservas convivem com o período da campanha e entre si (sem checagem de choque)
   const id = 'r' + Date.now();
-  db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anu);
+  await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anu);
   db.prepare(
     'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
   ).run(id, req.params.id, inicio, fim, anu, req.user.login);
@@ -660,7 +654,7 @@ app.post('/api/campanhas/:id/reservas', auth(), requer('reservas'), (req, res) =
 });
 // Reserva com LED: {led_codigo, anunciante, inicio, fim} — usa campanha existente
 // do mesmo LED+anunciante ou cria uma campanha reservada automaticamente
-app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
+app.post('/api/reservas', auth(), requer('reservas'), async (req, res) => {
   const { led_codigo, inicio, fim } = req.body || {};
   const anunciante = R.normalizarAnunciante(req.body?.anunciante);
   if (!led_codigo || !anunciante || !inicio || !fim)
@@ -686,12 +680,12 @@ app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
         .status(409)
         .json({ erro: `LED ${led_codigo} lotado (${usados.length}/${totalEsp})` });
     campanhaCriada = `c${Date.now()}`;
-    db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
+    await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunciante);
     db.prepare(
       'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,1)',
     ).run(campanhaCriada, ledCidade, led_codigo, anunciante, inicio, fim);
     log(req.user.login, 'campanha.create.auto', `${campanhaCriada} (${anunciante} ${led_codigo})`);
-    camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanhaCriada);
+    camp = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanhaCriada);
   }
   const id = 'r' + Date.now();
   db.prepare(
@@ -700,18 +694,18 @@ app.post('/api/reservas', auth(), requer('reservas'), (req, res) => {
   log(req.user.login, 'reserva.create', `${id} (${anunciante} ${led_codigo} ${inicio} → ${fim})`);
   res.status(201).json({ ok: true, id, campanha_id: camp.id, campanha_criada: campanhaCriada });
 });
-app.delete('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
-  const r = db.prepare('SELECT * FROM reservas WHERE id = ?').get(req.params.id);
+app.delete('/api/reservas/:id', auth(), requer('reservas'), async (req, res) => {
+  const r = await db.prepare('SELECT * FROM reservas WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ erro: 'reserva não encontrada' });
-  const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(r.campanha_id);
+  const camp = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(r.campanha_id);
   if (camp && !escopoCidadeOk(req.user, camp.cidade_id))
     return res.status(403).json({ erro: ERRO_ESCOPO });
-  db.prepare('DELETE FROM reservas WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM reservas WHERE id = ?').run(req.params.id);
   log(req.user.login, 'reserva.delete', req.params.id);
   res.json({ ok: true });
 });
 // Menu de cadastro: lista global com filtros + edição completa
-app.get('/api/reservas', authOpcional, (req, res) => {
+app.get('/api/reservas', authOpcional, async (req, res) => {
   const filtro = filtroEfetivo(req);
   const nomes = Object.fromEntries(
     db
@@ -737,10 +731,10 @@ app.get('/api/reservas', authOpcional, (req, res) => {
   if (req.query.campanha_id) rows = rows.filter((r) => r.campanha_id === req.query.campanha_id);
   res.json(rows);
 });
-app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM reservas WHERE id = ?').get(req.params.id);
+app.put('/api/reservas/:id', auth(), requer('reservas'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM reservas WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ erro: 'reserva não encontrada' });
-  const camp = db.prepare('SELECT * FROM campanhas WHERE id = ?').get(cur.campanha_id);
+  const camp = await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(cur.campanha_id);
   if (!camp) return res.status(404).json({ erro: 'campanha da reserva não encontrada' });
   if (!escopoCidadeOk(req.user, camp.cidade_id)) return res.status(403).json({ erro: ERRO_ESCOPO });
   const nx = {
@@ -755,13 +749,10 @@ app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
     return res.status(400).json({ erro: 'data inválida (use AAAA-MM-DD válido)' });
   if (nx.inicio > nx.fim) return res.status(400).json({ erro: 'início posterior ao fim' });
   // rotação: sem checagem de choque (ver POST)
-  db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
-  db.prepare('UPDATE reservas SET inicio = ?, fim = ?, anunciante = ? WHERE id = ?').run(
-    nx.inicio,
-    nx.fim,
-    nx.anunciante,
-    req.params.id,
-  );
+  await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(nx.anunciante);
+  await db
+    .prepare('UPDATE reservas SET inicio = ?, fim = ?, anunciante = ? WHERE id = ?')
+    .run(nx.inicio, nx.fim, nx.anunciante, req.params.id);
   log(
     req.user.login,
     'reserva.update',
@@ -771,7 +762,7 @@ app.put('/api/reservas/:id', auth(), requer('reservas'), (req, res) => {
 });
 
 // — Programação/grade V3 §9.1 (validação anti-sobreposição) —
-app.get('/api/programacoes', authOpcional, (req, res) => {
+app.get('/api/programacoes', authOpcional, async (req, res) => {
   const { led, campanha } = req.query;
   const filtro = filtroEfetivo(req);
   let sql = 'SELECT * FROM programacoes ORDER BY horario_inicio',
@@ -796,7 +787,7 @@ app.get('/api/programacoes', authOpcional, (req, res) => {
   }
   res.json(rows);
 });
-app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
+app.post('/api/programacoes', auth(), podeEditar, async (req, res) => {
   const {
     id,
     campanha_id,
@@ -814,7 +805,7 @@ app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
       .json({ erro: 'id, campanha_id, led_codigo, horario_inicio obrigatórios' });
   const ledCidade = cidadeDoLed(led_codigo);
   if (!ledCidade) return res.status(400).json({ erro: `LED "${led_codigo}" não cadastrado` });
-  if (!db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanha_id))
+  if (!(await db.prepare('SELECT * FROM campanhas WHERE id = ?').get(campanha_id)))
     return res.status(400).json({ erro: `campanha "${campanha_id}" não encontrada` });
   if (!escopoCidadeOk(req.user, ledCidade)) return res.status(403).json({ erro: ERRO_ESCOPO });
   if (!R.validarHorario(horario_inicio))
@@ -823,7 +814,9 @@ app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
     return res.status(400).json({ erro: 'duracao_segundos deve ser > 0' });
   if (!Number.isFinite(Number(insercoes_dia)) || Number(insercoes_dia) < 1)
     return res.status(400).json({ erro: 'insercoes_dia deve ser >= 1' });
-  const existentes = db.prepare('SELECT * FROM programacoes WHERE led_codigo = ?').all(led_codigo);
+  const existentes = await db
+    .prepare('SELECT * FROM programacoes WHERE led_codigo = ?')
+    .all(led_codigo);
   const choque = R.acharChoqueGrade(existentes, {
     horario_inicio,
     duracao_segundos: Number(duracao_segundos),
@@ -881,12 +874,12 @@ app.post('/api/programacoes', auth(), podeEditar, (req, res) => {
 });
 
 // — Dashboard consolidado (§8.2: 4 KPIs + rosca + linha + barras + gantt) —
-app.get('/api/dashboard', authOpcional, (req, res) => {
+app.get('/api/dashboard', authOpcional, async (req, res) => {
   const cfg = R.getConfig(db);
   const filtro = filtroEfetivo(req);
   const escopo = (c) => filtro.length === 0 || filtro.includes(c.cidade_id);
-  const camps = db.prepare('SELECT * FROM campanhas').all().filter(escopo);
-  const totalLeds = db.prepare('SELECT COUNT(*) v FROM leds').get().v;
+  const camps = await db.prepare('SELECT * FROM campanhas').all().filter(escopo);
+  const totalLeds = await db.prepare('SELECT COUNT(*) v FROM leds').get().v;
   const leds = db
     .prepare('SELECT * FROM leds')
     .all()
@@ -1073,12 +1066,12 @@ function linhasPlanilha(filtro, status, q) {
   }
   return rows;
 }
-app.get('/api/planilha', authOpcional, (req, res) => {
+app.get('/api/planilha', authOpcional, async (req, res) => {
   res.json(linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q));
 });
 
 // — Exportação §8.3 (exporta exatamente a view atual: mesmos filtros da planilha) —
-app.get('/api/export/planilha.csv', authOpcional, requer('exportar'), (req, res) => {
+app.get('/api/export/planilha.csv', authOpcional, requer('exportar'), async (req, res) => {
   const dados = linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q);
   const csv =
     'Cidade;LED;Anunciante;Início;Fim;Status\n' +
@@ -1090,7 +1083,7 @@ app.get('/api/export/planilha.csv', authOpcional, requer('exportar'), (req, res)
     .attachment('controle-de-leds.csv')
     .send('﻿' + csv);
 });
-app.get('/api/export/planilha.xlsx', authOpcional, requer('exportar'), (req, res) => {
+app.get('/api/export/planilha.xlsx', authOpcional, requer('exportar'), async (req, res) => {
   const ws = XLSX.utils.json_to_sheet(
     linhasPlanilha(filtroEfetivo(req), req.query.status, req.query.q).map((c) => ({
       Cidade: c.cidade,
@@ -1117,7 +1110,7 @@ const DIMENSOES_REL = {
   cidade: { titulo: 'Por cidade', chave: (r) => r.cidade },
   cliente: { titulo: 'Por cliente', chave: (r) => r.anunciante },
 };
-app.post('/api/relatorios/pdf', auth(), requer('relatorios'), (req, res) => {
+app.post('/api/relatorios/pdf', auth(), requer('relatorios'), async (req, res) => {
   const {
     dimensao = 'led',
     cidades = '',
@@ -1270,7 +1263,7 @@ const normKey = (s) =>
   String(s || '')
     .trim()
     .toLowerCase();
-app.get('/api/import/modelo.csv', (req, res) => {
+app.get('/api/import/modelo.csv', async (req, res) => {
   const modelo =
     'Cidade;LED;Anunciante;Início;Fim;Reservada;Reserva1_Anunciante;Reserva1_Início;Reserva1_Fim;Reserva2_Anunciante;Reserva2_Início;Reserva2_Fim;Reserva3_Anunciante;Reserva3_Início;Reserva3_Fim\n' +
     'Aracaju;AJU 01;Exemplo S.A.;01/12/26;31/01/27;0;Parceiro S.A.;01/03/27;31/03/27;;;;;;\n' +
@@ -1280,7 +1273,7 @@ app.get('/api/import/modelo.csv', (req, res) => {
     .attachment('modelo-importacao.csv')
     .send('﻿' + modelo);
 });
-app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
+app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) => {
   const { csv } = req.body || {};
   if (!csv || typeof csv !== 'string')
     return res
@@ -1324,7 +1317,7 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
     const a = head.findIndex((x) => x === `reserva${m[1]}anunciante`);
     paresReserva.push({ k: m[1], i, j, a });
   });
-  const cidades = db.prepare('SELECT * FROM cidades').all();
+  const cidades = await db.prepare('SELECT * FROM cidades').all();
   const semAcentoLower = (s) =>
     String(s || '')
       .normalize('NFD')
@@ -1332,7 +1325,7 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       .toLowerCase();
   const porNome = Object.fromEntries(cidades.map((c) => [semAcentoLower(c.nome), c.id]));
   const porId = Object.fromEntries(cidades.map((c) => [semAcentoLower(c.id), c.id]));
-  const ledsTodos = db.prepare('SELECT * FROM leds').all();
+  const ledsTodos = await db.prepare('SELECT * FROM leds').all();
   const porLed = Object.fromEntries(
     ledsTodos.map((l) => [semAcentoLower(l.codigo).replace(/\s+/g, ' '), l]),
   );
@@ -1406,7 +1399,7 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       candidatas.push({ anuRes, rIni, rFim, tag });
     }
     // helper local: cria campanha com checagens de duplicada e lotação
-    const tentarCriar = (anunc, ini, fimm, reservadaFlag) => {
+    const tentarCriar = async (anunc, ini, fimm, reservadaFlag) => {
       if (
         db
           .prepare('SELECT * FROM campanhas WHERE led_codigo = ? AND anunciante = ? AND inicio = ?')
@@ -1417,28 +1410,28 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       if (!usados.includes(anunc) && usados.length >= cfg.max_clientes_por_led)
         return { erro: `LED ${led} lotado (${usados.length}/${cfg.max_clientes_por_led})` };
       const id = `imp-${Date.now()}-${k}`;
-      db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunc);
-      db.prepare(
+      await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunc);
+      await db.prepare(
         'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
       ).run(id, cidadeId, led, anunc, ini, fimm, reservadaFlag ? 1 : 0);
       criadas.push(id);
       return { id };
     };
-    const gravarReserva = (campId, anuRes, rIni, rFim) => {
+    const gravarReserva = async (campId, anuRes, rIni, rFim) => {
       const rid = `imp-r-${Date.now()}-${k}-${reservasCriadas}`;
-      db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anuRes);
-      db.prepare(
+      await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anuRes);
+      await db.prepare(
         'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
       ).run(rid, campId, rIni, rFim, anuRes, req.user.login);
       reservasCriadas++;
     };
-    const checarReserva = (campId, feitas, cd, anuDefault) => {
+    const checarReserva = async (campId, feitas, cd, anuDefault) => {
       const anu = cd.anuRes || anuDefault;
       if (feitas.some((f) => f.inicio === cd.rIni && f.fim === cd.rFim && f.anu === anu)) {
         ignoradas.push({ ...rot, motivo: `${cd.tag}: reserva duplicada na linha` });
         return;
       }
-      gravarReserva(campId, anu, cd.rIni, cd.rFim);
+      await gravarReserva(campId, anu, cd.rIni, cd.rFim);
       feitas.push({ inicio: cd.rIni, fim: cd.rFim, anu });
     };
     if (!inicio || !fim) {
@@ -1463,7 +1456,7 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
       const feitas = [
         { inicio: primeira.rIni, fim: primeira.rFim, anu: primeira.anuRes || anuCamp },
       ];
-      candidatas.slice(1).forEach((cd) => checarReserva(rc.id, feitas, cd, anuCamp));
+      candidatas.slice(1).forEach(async (cd) => await checarReserva(rc.id, feitas, cd, anuCamp));
       return;
     }
     if (inicio > fim) {
@@ -1477,15 +1470,16 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
     const rc = tentarCriar(anunciante, inicio, fim, reservada);
     if (rc.erro) return ignoradas.push({ ...rot, motivo: rc.erro });
     const feitas = [];
-    for (const cd of candidatas) {
+    const reservasPromises = candidatas.map(async (cd) => {
       const rFimRolado = rolarAnoFim(cd.rIni, cd.rFim);
-      checarReserva(
+      await checarReserva(
         rc.id,
         feitas,
         rFimRolado === cd.rFim ? cd : { ...cd, rFim: rFimRolado },
         anunciante,
       );
-    }
+    });
+    await Promise.all(reservasPromises);
   });
   log(
     req.user.login,
@@ -1501,9 +1495,9 @@ app.post('/api/import/planilha', auth(), requer('importar'), (req, res) => {
     ids: criadas,
   });
 });
-app.get('/api/notificacoes', authOpcional, (req, res) => {
+app.get('/api/notificacoes', authOpcional, async (req, res) => {
   const filtro = filtroEfetivo(req);
-  let rows = db.prepare('SELECT * FROM notificacoes ORDER BY criada_em DESC LIMIT 50').all();
+  let rows = await db.prepare('SELECT * FROM notificacoes ORDER BY criada_em DESC LIMIT 50').all();
   if (filtro.length) rows = rows.filter((n) => !n.cidade_id || filtro.includes(n.cidade_id));
   // Enriquece para o "Ver campanha": anunciante, LED e id real da campanha
   const porId = Object.fromEntries(
@@ -1567,13 +1561,13 @@ app.get('/api/notificacoes', authOpcional, (req, res) => {
     }),
   );
 });
-app.post('/api/notificacoes/varredura', auth(), (req, res) => {
-  const r = R.varreduraNotificacoes(db);
+app.post('/api/notificacoes/varredura', auth(), async (req, res) => {
+  const r = await R.varreduraNotificacoes(db);
   log(req.user?.login || 'job', 'notificacoes.varredura', JSON.stringify(r));
   res.json(r);
 });
-app.patch('/api/notificacoes/:id/lida', auth(), (req, res) => {
-  db.prepare('UPDATE notificacoes SET lida = 1 WHERE id = ?').run(req.params.id);
+app.patch('/api/notificacoes/:id/lida', auth(), async (req, res) => {
+  await db.prepare('UPDATE notificacoes SET lida = 1 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -1614,12 +1608,12 @@ function temaVars() {
   }
 }
 const ehCor = (s) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(s || ''));
-app.get('/api/tema', (req, res) => res.json({ vars: temaVars(), rotulos: ROTULOS_TEMA }));
-app.put('/api/tema', auth(), requer('config'), (req, res) => {
+app.get('/api/tema', async (req, res) => res.json({ vars: temaVars(), rotulos: ROTULOS_TEMA }));
+app.put('/api/tema', auth(), requer('config'), async (req, res) => {
   const { restaurar = false } = req.body || {};
   const vars = req.body?.vars && typeof req.body.vars === 'object' ? req.body.vars : {};
   if (restaurar) {
-    db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)').run('{}');
+    await db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)').run('{}');
     log(req.user.login, 'tema.restore', 'padrão');
     return res.json({ vars: temaVars() });
   }
@@ -1630,18 +1624,20 @@ app.put('/api/tema', auth(), requer('config'), (req, res) => {
       return res.status(400).json({ erro: `cor inválida para ${k} (use #rgb ou #rrggbb)` });
     atual[k] = v;
   }
-  db.prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)').run(JSON.stringify(atual));
+  await db
+    .prepare('INSERT OR REPLACE INTO tema (id, vars) VALUES (1, ?)')
+    .run(JSON.stringify(atual));
   log(req.user.login, 'tema.update', Object.keys(vars).join(','));
   res.json({ vars: temaVars() });
 });
 
 // — Logo da empresa: dataURL persistida no banco, exibição em tamanho fixo —
 const LOGO_MAX = 512 * 1024; // 512KB
-app.get('/api/logo', (req, res) => {
-  const row = db.prepare('SELECT logo_dataurl FROM config WHERE id = 1').get();
+app.get('/api/logo', async (req, res) => {
+  const row = await db.prepare('SELECT logo_dataurl FROM config WHERE id = 1').get();
   res.json({ logo: (row && row.logo_dataurl) || null });
 });
-app.put('/api/logo', auth(), requer('config'), (req, res) => {
+app.put('/api/logo', auth(), requer('config'), async (req, res) => {
   const { dataUrl } = req.body || {};
   if (
     typeof dataUrl !== 'string' ||
@@ -1652,12 +1648,12 @@ app.put('/api/logo', auth(), requer('config'), (req, res) => {
       .json({ erro: 'envie {dataUrl} de imagem (png/jpg/gif/webp/svg em base64)' });
   if (dataUrl.length > LOGO_MAX)
     return res.status(413).json({ erro: `logo grande demais (máx. ${LOGO_MAX / 1024}KB)` });
-  db.prepare('UPDATE config SET logo_dataurl = ? WHERE id = 1').run(dataUrl);
+  await db.prepare('UPDATE config SET logo_dataurl = ? WHERE id = 1').run(dataUrl);
   log(req.user.login, 'logo.update', `${dataUrl.length} chars`);
   res.json({ ok: true });
 });
-app.delete('/api/logo', auth(), requer('config'), (req, res) => {
-  db.prepare('UPDATE config SET logo_dataurl = ? WHERE id = 1').run('');
+app.delete('/api/logo', auth(), requer('config'), async (req, res) => {
+  await db.prepare('UPDATE config SET logo_dataurl = ? WHERE id = 1').run('');
   log(req.user.login, 'logo.delete', '');
   res.json({ ok: true });
 });
@@ -1676,9 +1672,9 @@ function detalheUsuario(login) {
   return u;
 }
 const IDS_RECURSOS = RECURSOS.map((r) => r.id);
-app.get('/api/recursos', auth(), (req, res) => res.json(RECURSOS));
-app.get('/api/me', auth(), (req, res) => res.json(detalheUsuario(req.user.login)));
-app.get('/api/usuarios', auth(), requer('usuarios'), (req, res) =>
+app.get('/api/recursos', auth(), async (req, res) => res.json(RECURSOS));
+app.get('/api/me', auth(), async (req, res) => res.json(await detalheUsuario(req.user.login)));
+app.get('/api/usuarios', auth(), requer('usuarios'), async (req, res) =>
   res.json(
     db
       .prepare('SELECT login FROM usuarios ORDER BY login')
@@ -1686,7 +1682,7 @@ app.get('/api/usuarios', auth(), requer('usuarios'), (req, res) =>
       .map((r) => detalheUsuario(r.login)),
   ),
 );
-app.post('/api/usuarios', auth(), requer('usuarios'), (req, res) => {
+app.post('/api/usuarios', auth(), requer('usuarios'), async (req, res) => {
   const { login, senha, perfil = 'visualizador', nome = '' } = req.body || {};
   const cidades = Array.isArray(req.body?.cidades) ? req.body.cidades : [];
   const permissoes = Array.isArray(req.body?.permissoes) ? req.body.permissoes : [];
@@ -1696,17 +1692,14 @@ app.post('/api/usuarios', auth(), requer('usuarios'), (req, res) => {
       .status(400)
       .json({ erro: `perfil inválido (use ${Object.keys(PERFIL_DEFAULT).join('/')})` });
   for (const c of cidades)
-    if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(c))
+    if (!(await db.prepare('SELECT * FROM cidades WHERE id = ?').get(c)))
       return res.status(400).json({ erro: `cidade "${c}" não cadastrada` });
   const recs = [...new Set(permissoes)].filter((r) => IDS_RECURSOS.includes(r));
   try {
     const senhaHash = bcrypt.hashSync(senha, 10);
-    db.prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)').run(
-      login,
-      senhaHash,
-      perfil,
-      nome,
-    );
+    await db
+      .prepare('INSERT INTO usuarios (login,senha,perfil,nome) VALUES (?,?,?,?)')
+      .run(login, senhaHash, perfil, nome);
   } catch {
     return res.status(409).json({ erro: `login "${login}" já existe` });
   }
@@ -1717,8 +1710,8 @@ app.post('/api/usuarios', auth(), requer('usuarios'), (req, res) => {
   log(req.user.login, 'usuario.create', `${login} (${perfil})`);
   res.status(201).json(detalheUsuario(login));
 });
-app.put('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.params.login);
+app.put('/api/usuarios/:login', auth(), requer('usuarios'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.params.login);
   if (!cur) return res.status(404).json({ erro: 'usuário não encontrado' });
   const { senha, perfil = cur.perfil, nome = cur.nome, cidades, permissoes } = req.body || {};
   if (!PERFIL_DEFAULT[perfil]) return res.status(400).json({ erro: 'perfil inválido' });
@@ -1733,22 +1726,22 @@ app.put('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
   ).run(senha ? bcrypt.hashSync(senha, 10) : null, perfil, nome, req.params.login);
   if (Array.isArray(cidades)) {
     for (const c of cidades)
-      if (!db.prepare('SELECT * FROM cidades WHERE id = ?').get(c))
+      if (!(await db.prepare('SELECT * FROM cidades WHERE id = ?').get(c)))
         return res.status(400).json({ erro: `cidade "${c}" não cadastrada` });
-    db.prepare('DELETE FROM usuario_cidade WHERE login = ?').run(req.params.login);
+    await db.prepare('DELETE FROM usuario_cidade WHERE login = ?').run(req.params.login);
     const li = db.prepare('INSERT INTO usuario_cidade (login,cidade_id) VALUES (?,?)');
     for (const c of new Set(cidades)) li.run(req.params.login, c);
   }
   if (Array.isArray(permissoes)) {
-    db.prepare('DELETE FROM permissoes WHERE login = ?').run(req.params.login);
+    await db.prepare('DELETE FROM permissoes WHERE login = ?').run(req.params.login);
     const pi = db.prepare('INSERT INTO permissoes (login,recurso) VALUES (?,?)');
     for (const r of new Set(permissoes)) if (IDS_RECURSOS.includes(r)) pi.run(req.params.login, r);
   }
   log(req.user.login, 'usuario.update', req.params.login);
-  res.json(detalheUsuario(req.params.login));
+  res.json(await detalheUsuario(req.params.login));
 });
-app.delete('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
-  const cur = db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.params.login);
+app.delete('/api/usuarios/:login', auth(), requer('usuarios'), async (req, res) => {
+  const cur = await db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.params.login);
   if (!cur) return res.status(404).json({ erro: 'usuário não encontrado' });
   if (req.params.login === req.user.login)
     return res.status(409).json({ erro: 'não é possível excluir o próprio login' });
@@ -1757,7 +1750,7 @@ app.delete('/api/usuarios/:login', auth(), requer('usuarios'), (req, res) => {
     db.prepare("SELECT COUNT(*) v FROM usuarios WHERE perfil = 'admin'").get().v <= 1
   )
     return res.status(409).json({ erro: 'não é possível excluir o último admin' });
-  db.prepare('DELETE FROM usuarios WHERE login = ?').run(req.params.login);
+  await db.prepare('DELETE FROM usuarios WHERE login = ?').run(req.params.login);
   log(req.user.login, 'usuario.delete', req.params.login);
   res.json({ ok: true });
 });
@@ -1778,7 +1771,7 @@ const TABELAS_BACKUP = [
   'auditoria',
   'tema',
 ];
-app.get('/api/backup', auth(), requer('config'), (req, res) => {
+app.get('/api/backup', auth(), requer('config'), async (req, res) => {
   const tabelas = {};
   for (const t of TABELAS_BACKUP) {
     try {
@@ -1801,13 +1794,13 @@ app.get('/api/backup', auth(), requer('config'), (req, res) => {
       }),
     );
 });
-app.post('/api/backup/restaurar', auth(), requer('config'), (req, res) => {
+app.post('/api/backup/restaurar', auth(), requer('config'), async (req, res) => {
   const { tabelas } = req.body || {};
   if (!tabelas || typeof tabelas !== 'object' || !Array.isArray(tabelas.campanhas))
     return res
       .status(400)
       .json({ erro: 'backup inválido (esperado {tabelas: {...}} com campanhas)' });
-  const tx = db.transaction(() => {
+  const tx = await db.transaction(async () => {
     for (const t of [...TABELAS_BACKUP].reverse()) db.prepare(`DELETE FROM ${t}`).run();
     const cols = (t) =>
       db
@@ -1839,11 +1832,11 @@ app.post('/api/backup/restaurar', auth(), requer('config'), (req, res) => {
 });
 
 // — Auditoria §9.2 —
-app.get('/api/auditoria', auth(), soAdmin, (req, res) =>
-  res.json(db.prepare('SELECT * FROM auditoria ORDER BY id DESC LIMIT 100').all()),
+app.get('/api/auditoria', auth(), soAdmin, async (req, res) =>
+  res.json(await db.prepare('SELECT * FROM auditoria ORDER BY id DESC LIMIT 100').all()),
 );
 
-app.get('/api/health', (req, res) => res.json({ ok: true, hoje: R.hojeISO() }));
+app.get('/api/health', async (req, res) => res.json({ ok: true, hoje: R.hojeISO() }));
 
 // Documentação OpenAPI/Swagger
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
@@ -1851,23 +1844,25 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 // Job diário: poda de órfãs + varredura automática (a cada 24h; +1 execução no boot)
 let jobInterval = null;
 jobInterval = setInterval(
-  () => {
+  async () => {
     try {
-      R.podarNotificacoesOrfas(db);
-      R.varreduraNotificacoes(db);
+      await R.podarNotificacoesOrfas(db);
+      await R.varreduraNotificacoes(db);
     } catch {
       // ignore: falha silenciosa no job agendado não deve derrubar o servidor
     }
   },
   24 * 3600 * 1000,
 );
-try {
-  const podadas = R.podarNotificacoesOrfas(db);
-  if (podadas) console.log(`notificações órfãs removidas: ${podadas}`);
-  R.varreduraNotificacoes(db);
-} catch {
-  // ignore: falha na varredura inicial não deve impedir o boot da API
-}
+(async () => {
+  try {
+    const podadas = await R.podarNotificacoesOrfas(db);
+    if (podadas) console.log(`notificações órfãs removidas: ${podadas}`);
+    await R.varreduraNotificacoes(db);
+  } catch {
+    // ignore: falha na varredura inicial não deve impedir o boot da API
+  }
+})();
 
 let server = null;
 function encerrar() {
