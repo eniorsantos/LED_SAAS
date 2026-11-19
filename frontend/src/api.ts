@@ -178,6 +178,8 @@ export const api = {
   editarUsuario: (login: string, body: any) =>
     req('/api/usuarios/' + login, { method: 'PUT', body: JSON.stringify(body) }),
   excluirUsuario: (login: string) => req('/api/usuarios/' + login, { method: 'DELETE' }),
+  alterarSenha: (senhaAtual: string, novaSenha: string) =>
+    req('/api/me/senha', { method: 'PATCH', body: JSON.stringify({ senhaAtual, novaSenha }) }),
   reservas: (campanhaId: string) => req<any[]>(`/api/campanhas/${campanhaId}/reservas`),
   criarReserva: (campanhaId: string, body: any) =>
     req(`/api/campanhas/${campanhaId}/reservas`, { method: 'POST', body: JSON.stringify(body) }),

@@ -1346,28 +1346,39 @@ app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) =>
     }
     return f;
   };
-  linhas.slice(1).forEach((line, k) => {
+  for (const [k, line] of linhas.slice(1).entries()) {
     const nLinha = k + 2,
       col = parseCSVLine(line, delim);
     const rot = { linha: nLinha, anunciante: col[iAnu] || '' };
     const cidadeId = porId[semAcentoLower(col[iCid])] || porNome[semAcentoLower(col[iCid])];
-    if (!cidadeId)
-      return ignoradas.push({ ...rot, motivo: `cidade "${col[iCid]}" não cadastrada` });
+    if (!cidadeId) {
+      ignoradas.push({ ...rot, motivo: `cidade "${col[iCid]}" não cadastrada` });
+      continue;
+    }
     const ledBruto = String(col[iLed] || '').trim();
     const ledRow = porLed[semAcentoLower(ledBruto).replace(/\s+/g, ' ')];
-    if (!ledRow) return ignoradas.push({ ...rot, motivo: `LED "${ledBruto}" não cadastrado` });
+    if (!ledRow) {
+      ignoradas.push({ ...rot, motivo: `LED "${ledBruto}" não cadastrado` });
+      continue;
+    }
     const led = ledRow.codigo;
-    if (ledRow.cidade_id !== cidadeId)
-      return ignoradas.push({ ...rot, motivo: `LED ${led} não é da cidade informada` });
-    if (!escopoCidadeOk(req.user, cidadeId))
-      return ignoradas.push({ ...rot, motivo: 'fora do seu escopo de cidades' });
+    if (ledRow.cidade_id !== cidadeId) {
+      ignoradas.push({ ...rot, motivo: `LED ${led} não é da cidade informada` });
+      continue;
+    }
+    if (!escopoCidadeOk(req.user, cidadeId)) {
+      ignoradas.push({ ...rot, motivo: 'fora do seu escopo de cidades' });
+      continue;
+    }
     const anunciante = R.normalizarAnunciante(col[iAnu]);
     const rawIni = col[iIni] || '',
       rawFim = col[iFim] || '';
     let inicio = normalizarData(rawIni),
       fim = normalizarData(rawFim);
-    if ((!inicio && rawIni) || (!fim && rawFim))
-      return ignoradas.push({ ...rot, motivo: `data inválida ("${rawIni}" → "${rawFim}")` });
+    if ((!inicio && rawIni) || (!fim && rawFim)) {
+      ignoradas.push({ ...rot, motivo: `data inválida ("${rawIni}" → "${rawFim}")` });
+      continue;
+    }
     if (!inicio && fim) inicio = fim; // só um lado preenchido = diária única
     if (inicio && !fim) fim = inicio;
     // pares de reserva válidos (para o fluxo normal e para o fallback reserva-only)
@@ -1411,18 +1422,22 @@ app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) =>
         return { erro: `LED ${led} lotado (${usados.length}/${cfg.max_clientes_por_led})` };
       const id = `imp-${Date.now()}-${k}`;
       await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anunc);
-      await db.prepare(
-        'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
-      ).run(id, cidadeId, led, anunc, ini, fimm, reservadaFlag ? 1 : 0);
+      await db
+        .prepare(
+          'INSERT INTO campanhas (id,cidade_id,led_codigo,anunciante,inicio,fim,reservada) VALUES (?,?,?,?,?,?,?)',
+        )
+        .run(id, cidadeId, led, anunc, ini, fimm, reservadaFlag ? 1 : 0);
       criadas.push(id);
       return { id };
     };
     const gravarReserva = async (campId, anuRes, rIni, rFim) => {
       const rid = `imp-r-${Date.now()}-${k}-${reservasCriadas}`;
       await db.prepare('INSERT OR IGNORE INTO anunciantes (nome) VALUES (?)').run(anuRes);
-      await db.prepare(
-        'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
-      ).run(rid, campId, rIni, rFim, anuRes, req.user.login);
+      await db
+        .prepare(
+          'INSERT INTO reservas (id,campanha_id,inicio,fim,anunciante,criada_por) VALUES (?,?,?,?,?,?)',
+        )
+        .run(rid, campId, rIni, rFim, anuRes, req.user.login);
       reservasCriadas++;
     };
     const checarReserva = async (campId, feitas, cd, anuDefault) => {
@@ -1436,18 +1451,25 @@ app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) =>
     };
     if (!inicio || !fim) {
       // sem datas de campanha: a 1ª reserva válida vira campanha reservada
-      if (!anunciante && !candidatas.length)
-        return ignoradas.push({ ...rot, motivo: 'linha vazia ou sem datas' });
-      if (!candidatas.length)
-        return ignoradas.push({
-          ...rot,
-          motivo: `data inválida ("${col[iIni]}" → "${col[iFim]}")`,
-        });
+      if (!anunciante && !candidatas.length) {
+        ignoradas.push({ ...rot, motivo: 'linha vazia ou sem datas' });
+        continue;
+      }
+      if (!candidatas.length) {
+        ignoradas.push({ ...rot, motivo: `data inválida ("${col[iIni]}" → "${col[iFim]}")` });
+        continue;
+      }
       const primeira = candidatas[0];
       const anuCamp = anunciante || primeira.anuRes;
-      if (!anuCamp) return ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
-      const rc = tentarCriar(anuCamp, primeira.rIni, primeira.rFim, true);
-      if (rc.erro) return ignoradas.push({ ...rot, motivo: rc.erro });
+      if (!anuCamp) {
+        ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
+        continue;
+      }
+      const rc = await tentarCriar(anuCamp, primeira.rIni, primeira.rFim, true);
+      if (rc.erro) {
+        ignoradas.push({ ...rot, motivo: rc.erro });
+        continue;
+      }
       ignoradas.push({
         ...rot,
         motivo: `sem datas de campanha — criada como reservada de ${primeira.rIni} → ${primeira.rFim}`,
@@ -1456,19 +1478,31 @@ app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) =>
       const feitas = [
         { inicio: primeira.rIni, fim: primeira.rFim, anu: primeira.anuRes || anuCamp },
       ];
-      candidatas.slice(1).forEach(async (cd) => await checarReserva(rc.id, feitas, cd, anuCamp));
-      return;
+      const promises = candidatas
+        .slice(1)
+        .map(async (cd) => checarReserva(rc.id, feitas, cd, anuCamp));
+      await Promise.all(promises);
+      continue;
     }
     if (inicio > fim) {
       const rolado = rolarAnoFim(inicio, fim);
-      if (rolado === fim) return ignoradas.push({ ...rot, motivo: 'início posterior ao fim' });
+      if (rolado === fim) {
+        ignoradas.push({ ...rot, motivo: 'início posterior ao fim' });
+        continue;
+      }
       fim = rolado;
     }
-    if (!anunciante) return ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
+    if (!anunciante) {
+      ignoradas.push({ ...rot, motivo: 'anunciante vazio' });
+      continue;
+    }
     const reservada =
       iRes >= 0 ? ['1', 'sim', 's', 'verdadeiro', 'true'].includes(normKey(col[iRes])) : false;
-    const rc = tentarCriar(anunciante, inicio, fim, reservada);
-    if (rc.erro) return ignoradas.push({ ...rot, motivo: rc.erro });
+    const rc = await tentarCriar(anunciante, inicio, fim, reservada);
+    if (rc.erro) {
+      ignoradas.push({ ...rot, motivo: rc.erro });
+      continue;
+    }
     const feitas = [];
     const reservasPromises = candidatas.map(async (cd) => {
       const rFimRolado = rolarAnoFim(cd.rIni, cd.rFim);
@@ -1480,7 +1514,7 @@ app.post('/api/import/planilha', auth(), requer('importar'), async (req, res) =>
       );
     });
     await Promise.all(reservasPromises);
-  });
+  }
   log(
     req.user.login,
     'planilha.import',
@@ -1674,6 +1708,29 @@ function detalheUsuario(login) {
 const IDS_RECURSOS = RECURSOS.map((r) => r.id);
 app.get('/api/recursos', auth(), async (req, res) => res.json(RECURSOS));
 app.get('/api/me', auth(), async (req, res) => res.json(await detalheUsuario(req.user.login)));
+app.patch('/api/me/senha', auth(), async (req, res) => {
+  const { senhaAtual, novaSenha } = req.body || {};
+  if (!senhaAtual || !novaSenha)
+    return res.status(400).json({ erro: 'senha atual e nova senha são obrigatórias' });
+  if (novaSenha.length < 6)
+    return res.status(400).json({ erro: 'nova senha deve ter pelo menos 6 caracteres' });
+  const u = await db.prepare('SELECT * FROM usuarios WHERE login = ?').get(req.user.login);
+  if (!u) return res.status(404).json({ erro: 'usuário não encontrado' });
+  let senhaValida;
+  try {
+    senhaValida = u.senha.startsWith('$2b$')
+      ? bcrypt.compareSync(senhaAtual, u.senha)
+      : u.senha === senhaAtual;
+  } catch {
+    senhaValida = u.senha === senhaAtual;
+  }
+  if (!senhaValida) return res.status(401).json({ erro: 'senha atual inválida' });
+  await db
+    .prepare('UPDATE usuarios SET senha = ? WHERE login = ?')
+    .run(bcrypt.hashSync(novaSenha, 10), req.user.login);
+  log(req.user.login, 'usuario.senha.alterada', 'senha alterada pelo próprio usuário');
+  res.json({ ok: true, mensagem: 'Senha alterada com sucesso.' });
+});
 app.get('/api/usuarios', auth(), requer('usuarios'), async (req, res) =>
   res.json(
     db

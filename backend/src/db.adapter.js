@@ -33,12 +33,12 @@ if (USING_POSTGRES) {
       async run(...params) {
         return pool.query(sql, params);
       },
-      async get(...params) {
-        const r = await pool.query(sql, params);
+      async get(...p) {
+        const r = await pool.query(sql, p);
         return r.rows[0] || null;
       },
-      async all(...params) {
-        const r = await pool.query(sql, params);
+      async all(...p) {
+        const r = await pool.query(sql, p);
         return r.rows;
       },
     };
@@ -73,16 +73,22 @@ if (USING_POSTGRES) {
   }
   db = { pool, query, get, run, prepare, transaction, isUsingPostgres: () => true };
 } else {
-  const Database = require('better-sqlite3');
-  const path = require('path');
-  const sqliteDb = new Database(process.env.DB_PATH || path.join(__dirname, '..', 'data.db'));
+  // SQLite: envolve o db existente de db.js (que já criou as tabelas)
+  const sqliteDb = require('./db');
   db = {
     ...sqliteDb,
     prepare: (sql) => sqliteDb.prepare(sql),
-    run: (sql, params = []) => sqliteDb.run(sql, params),
-    get: (sql, params = []) => sqliteDb.prepare(sql).get(params),
-    all: (sql, params = []) => sqliteDb.prepare(sql).all(params),
-    transaction: (fn) => sqliteDb.transaction(fn),
+    run: (sql, params = []) => sqliteDb.prepare(sql).run(...params),
+    get: (sql, params = []) => sqliteDb.prepare(sql).get(...params),
+    all: (sql, params = []) => sqliteDb.prepare(sql).all(...params),
+    transaction: (fn) => {
+      // SQLite: sqliteDb.transaction() é síncrono e não suporta async/await dentro
+      // do callback. Executa a função diretamente; cada statement é auto-commitado
+      // pelo better-sqlite3.
+      return async () => {
+        return await fn();
+      };
+    },
     isUsingPostgres: () => false,
   };
 }

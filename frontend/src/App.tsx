@@ -2,6 +2,7 @@
 import Login from './components/Login';
 import CidadesSecao from './components/CidadesSecao';
 import UsuariosSecao from './components/UsuariosSecao';
+import PerfilSecao from './components/PerfilSecao';
 import TemaSecao from './components/TemaSecao';
 import LogoSecao from './components/LogoSecao';
 import BackupSecao from './components/BackupSecao';
@@ -35,7 +36,7 @@ import {
 } from './api';
 
 type Tab = 'dashboard' | 'planilha' | 'relatorios' | 'graficos' | 'reservas';
-type SecaoConfig = 'acesso' | 'cidades' | 'tema' | 'importar' | 'logo' | 'backup';
+type SecaoConfig = 'acesso' | 'cidades' | 'tema' | 'importar' | 'logo' | 'backup' | 'perfil';
 
 // Toast arrastável: aparece em todo login/refresh; fechar só dispensa nesta
 // sessão (não marca como lida — isso é feito na central). Arraste pelo título.
@@ -700,6 +701,8 @@ export default function App() {
       if (can('usuarios')) setConfigSecao('acesso');
       else if (can('cidades')) setConfigSecao('cidades');
       else if (can('config')) setConfigSecao('tema');
+    } else if (configSecao === 'perfil') {
+      // Perfil é sempre acessível ao próprio usuário
     }
     if (can('usuarios')) {
       setTimeout(() => carregarAcesso(), 0);
@@ -1945,14 +1948,20 @@ export default function App() {
             <h2>CONFIGURAÇÕES</h2>
             <p className="sub">Acesso de usuários, cidades e cores do projeto.</p>
             <div className="tabs">
-              {can('usuarios') && (
-                <div
-                  className={`tab ${configSecao === 'acesso' ? 'active' : ''}`}
-                  onClick={() => setConfigSecao('acesso')}
-                >
-                  Acesso
-                </div>
-              )}
+            {can('usuarios') && (
+              <div
+                className={`tab ${configSecao === 'acesso' ? 'active' : ''}`}
+                onClick={() => setConfigSecao('acesso')}
+              >
+                Acesso
+              </div>
+            )}
+            <div
+              className={`tab ${configSecao === 'perfil' ? 'active' : ''}`}
+              onClick={() => setConfigSecao('perfil')}
+            >
+              Meu Perfil
+            </div>
               {can('cidades') && (
                 <div
                   className={`tab ${configSecao === 'cidades' ? 'active' : ''}`}
@@ -2000,6 +2009,16 @@ export default function App() {
                   usersLista={usersLista}
                   cidades={cidades}
                   recursosLista={recursosLista}
+                  canUsuarios={can('usuarios')}
+                  carregarAcesso={carregarAcesso}
+                  carregar={carregar}
+                />
+              </>
+            )}
+            {configSecao === 'perfil' && (
+              <>
+                <PerfilSecao
+                  perfil={perfil}
                   canUsuarios={can('usuarios')}
                   carregarAcesso={carregarAcesso}
                   carregar={carregar}
